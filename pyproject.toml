@@ -1,0 +1,86 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pyrtl_433"
+version = "0.1.0"
+description = "Standalone async client for the rtl_433 WebSocket/HTTP API."
+requires-python = ">=3.14"
+license = "Apache-2.0"
+dependencies = ["aiohttp"]
+
+[tool.setuptools]
+packages = ["pyrtl_433"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+addopts = "-ra -q --strict-markers"
+markers = [
+    "unit: Unit tests (fast, no external dependencies)",
+    "integration: Integration tests (may use a running rtl_433 endpoint)",
+]
+filterwarnings = [
+    # Treat warnings as errors to catch issues early
+    "error",
+]
+
+[tool.coverage.run]
+source = ["pyrtl_433"]
+omit = ["tests/*"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+    "@overload",
+]
+
+[tool.ruff]
+# Based on https://github.com/home-assistant/core/blob/dev/pyproject.toml
+target-version = "py314"
+line-length = 88
+
+[tool.ruff.lint]
+select = [
+    "B",   # flake8-bugbear
+    "E",   # pycodestyle errors
+    "F",   # pyflakes
+    "I",   # isort
+    "SIM", # flake8-simplify
+    "UP",  # pyupgrade
+]
+ignore = [
+    "E501", # line too long (handled by the formatter)
+]
+
+[tool.ruff.lint.isort]
+force-sort-within-sections = true
+known-first-party = ["pyrtl_433"]
+combine-as-imports = true
+split-on-trailing-comma = false
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = [
+    "S101",    # assert is fine in tests
+    "PLR2004", # Magic values are fine in tests
+]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"
+docstring-code-format = true
+
+[tool.mutmut]
+# Mutation testing config (mutmut 3.x). mutmut copies source_paths plus the
+# auto-included tests/ + pyproject.toml into a mutants/ working copy and runs the
+# pytest suite there, forking once per mutant. The whole package must be in scope
+# so intra-package imports resolve inside mutants/.
+source_paths = ["pyrtl_433/"]
+pytest_add_cli_args_test_selection = ["tests/"]

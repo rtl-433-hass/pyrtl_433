@@ -1,0 +1,13 @@
+pyrtl_433
+Copyright 2026 Andrew Berry
+
+This product includes software extracted from the rtl-433-hass/rtl_433 Home
+Assistant integration (https://github.com/rtl-433-hass/rtl_433), licensed under
+the Apache License, Version 2.0.
+
+The following modules of that integration were the source of this library's code:
+
+  - custom_components/rtl_433/coordinator/base.py
+  - custom_components/rtl_433/normalizer.py
+  - custom_components/rtl_433/coordinator/_events.py
+  - custom_components/rtl_433/sdr_settings.py

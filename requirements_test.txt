@@ -1,0 +1,5 @@
+pytest
+pytest-asyncio
+pytest-aiohttp
+pytest-cov
+mutmut==3.6.0
