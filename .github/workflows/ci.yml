@@ -1,0 +1,32 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_call:
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.14"
+      - run: uv sync --locked --dev
+      - name: Lint
+        run: uv run ruff check .
+      - name: Format check
+        run: uv run ruff format --check .
+      - name: Type check
+        run: uv run mypy pyrtl_433/
+      - name: Test
+        run: uv run pytest -n auto --cov=pyrtl_433 --cov-report=term-missing --tb=short --cov-fail-under=95
+      - name: Mutation test (per-module floor ratchet)
+        run: |
+          uv run mutmut run --max-children 4
+          uv run python scripts/mutation_stats.py > mutation-stats.json
+          uv run python scripts/mutation_ratchet.py --mode floor --stats mutation-stats.json

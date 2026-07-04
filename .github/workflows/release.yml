@@ -1,0 +1,47 @@
+name: Release
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+  id-token: write
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  release-please:
+    runs-on: ubuntu-24.04
+    environment: main
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+    steps:
+      - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5
+        id: release
+        with:
+          release-type: python
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        if: steps.release.outputs.pr && !steps.release.outputs.release_created
+        with:
+          ref: ${{ fromJSON(steps.release.outputs.pr).headBranchName }}
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+        if: steps.release.outputs.pr && !steps.release.outputs.release_created
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        if: steps.release.outputs.pr && !steps.release.outputs.release_created
+        with:
+          python-version: "3.14"
+      - name: Update uv.lock
+        if: steps.release.outputs.pr && !steps.release.outputs.release_created
+        run: |
+          uv lock
+          if [ -n "$(git status --porcelain uv.lock)" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add uv.lock
+            git commit -m "chore: update uv.lock for release"
+            git push
+          fi
