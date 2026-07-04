@@ -10,16 +10,7 @@ Tests follow a three-tier naming convention:
   above its ratchet baseline.
 
 The library holds a per-module mutation-score **floor** (killed / total mutants),
-enforced by the ratchet:
-
-| Module | Killed / total | Score |
-| --- | --- | --- |
-| `client.py` | 453 / 459 | 0.987 |
-| `normalizer.py` | 74 / 75 | 0.987 |
-| `replay.py` | 100 / 101 | 0.990 |
-| `sdr.py` | 68 / 70 | 0.971 |
-| `_urls.py` | 22 / 22 | 1.000 |
-| **Overall** | **717 / 727** | **0.986** |
+enforced by the ratchet.
 
 ## Local commands
 
