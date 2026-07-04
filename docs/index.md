@@ -23,14 +23,6 @@ the HTTP `/cmd` endpoint that reports and controls the SDR configuration.
 - Reconnects on drop with capped exponential backoff, and tolerates keep-alives,
   malformed JSON, and hidden `/cmd` endpoints without ever killing the loop.
 
-## Deliberate non-scope
-
-This is a client, not a policy engine. It does **not** include the Home Assistant
-integration's entity model, desired-state store, SDR adoption/enforcement, or
-availability watchdog. It emits normalized, replay-classified events and gives
-you the `/cmd` setter primitive plus the SDR value transforms — you build any
-higher-level policy on top.
-
 ## Next steps
 
 - [Installation](installation.md) — requirements and how to install.
