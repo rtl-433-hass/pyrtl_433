@@ -7,9 +7,6 @@
 
 ## Install
 
-This project is [uv](https://docs.astral.sh/uv/)-first. Not yet published to
-PyPI; once it is:
-
 ```sh
 uv add pyrtl_433
 ```
