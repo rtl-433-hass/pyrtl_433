@@ -3,10 +3,11 @@ on:
   push:
     branches: [main]
 
+# No GITHUB_TOKEN write scopes needed: the App token minted below carries its
+# own Contents/Pull-requests write scopes. contents: read is kept so the called
+# CI workflow can check out the repo.
 permissions:
-  contents: write
-  pull-requests: write
-  id-token: write
+  contents: read
 
 jobs:
   ci:
@@ -14,20 +15,25 @@ jobs:
 
   release-please:
     runs-on: ubuntu-24.04
-    environment: main
     outputs:
       release_created: ${{ steps.release.outputs.release_created }}
     steps:
+      - name: Mint a GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.RELEASE_PLEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}
       - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5
         id: release
         with:
           release-type: python
-          token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+          token: ${{ steps.app-token.outputs.token }}
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         if: steps.release.outputs.pr && !steps.release.outputs.release_created
         with:
           ref: ${{ fromJSON(steps.release.outputs.pr).headBranchName }}
-          token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+          token: ${{ steps.app-token.outputs.token }}
       - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
         if: steps.release.outputs.pr && !steps.release.outputs.release_created
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
