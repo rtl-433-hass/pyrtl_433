@@ -8,3 +8,7 @@ __pycache__/
 .ruff_cache/
 .coverage
 stats.json
+
+# MkDocs / mike build artifacts
+site/
+.cache/
