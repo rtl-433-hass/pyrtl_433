@@ -1,2 +1,0 @@
--r requirements_test.txt
-ruff==0.15.20

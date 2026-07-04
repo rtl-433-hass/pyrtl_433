@@ -1,2 +1,0 @@
-# Runtime dependencies for pyrtl_433.
-aiohttp

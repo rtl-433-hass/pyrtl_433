@@ -547,15 +547,27 @@ async def test_validate_connection_insecure_uses_ws_url(fake_session):
     assert not fake_session.ws_connect_calls[-1].url.startswith("wss://")
 
 
-async def test_validate_connection_passes_timeout(fake_session):
-    """The probe carries the 10s validate timeout (kills a dropped-timeout mutant)."""
-    fake_session.default_ws_outcome = []
+async def test_validate_connection_is_time_bounded(fake_session, monkeypatch):
+    """A hung handshake is bounded by _VALIDATE_TIMEOUT and surfaces as CannotConnect.
 
-    await Rtl433Client.validate_connection(fake_session, HOST, 8433, "/ws")
+    The probe wraps the connect in ``asyncio.timeout(_VALIDATE_TIMEOUT)`` (aiohttp's
+    ws_connect ``timeout`` is a receive/close timeout, not a connect deadline).
+    Patching the deadline low and hanging the handshake kills a
+    dropped-/mutated-timeout mutant deterministically.
+    """
+    import asyncio
 
-    kwargs = fake_session.ws_connect_calls[-1].kwargs
-    assert "timeout" in kwargs
-    assert kwargs["timeout"].total == 10.0
+    import pyrtl_433.client as client_mod
+
+    monkeypatch.setattr(client_mod, "_VALIDATE_TIMEOUT", 0.01)
+
+    async def _hang(url, **kwargs):
+        await asyncio.sleep(0.5)
+
+    monkeypatch.setattr(fake_session, "ws_connect", _hang)
+
+    with pytest.raises(CannotConnect):
+        await Rtl433Client.validate_connection(fake_session, HOST, 8433, "/ws")
 
 
 async def test_validate_connection_error_message_contains_url(fake_session):

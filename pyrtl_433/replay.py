@@ -123,6 +123,16 @@ def classify_replay(
     )
 
 
+def _parse_local_naive(text: str) -> datetime | None:
+    """Parse the explicit rtl_433 local ``time`` formats, or ``None`` if none match."""
+    for fmt in ("%Y-%m-%d %H:%M:%S.%f", "%Y-%m-%d %H:%M:%S"):
+        try:
+            return datetime.strptime(text, fmt)  # noqa: DTZ007 - local naive
+        except ValueError:
+            continue
+    return None
+
+
 def parse_event_time(raw: Any) -> datetime | None:
     """Parse an rtl_433 ``time`` value to a comparable UTC instant, or ``None``.
 
@@ -141,6 +151,7 @@ def parse_event_time(raw: Any) -> datetime | None:
     text = raw.strip()
     if not text:
         return None
+    parsed: datetime | None
     try:
         # ``fromisoformat`` handles ISO-8601 with an offset / ``Z`` and, since
         # Python 3.11, the space-separated local ``"YYYY-MM-DD HH:MM:SS"`` form
@@ -149,15 +160,9 @@ def parse_event_time(raw: Any) -> datetime | None:
     except TypeError, ValueError:
         # A form ``fromisoformat`` rejects: fall back to the explicit rtl_433
         # local formats before giving up.
-        parsed = None
-        for fmt in ("%Y-%m-%d %H:%M:%S.%f", "%Y-%m-%d %H:%M:%S"):
-            try:
-                parsed = datetime.strptime(text, fmt)  # noqa: DTZ007 - local naive
-                break
-            except ValueError:
-                continue
-        if parsed is None:
-            return None
+        parsed = _parse_local_naive(text)
+    if parsed is None:
+        return None
     try:
         if parsed.tzinfo is None:
             # A naive value is interpreted in the system local time zone (mirrors

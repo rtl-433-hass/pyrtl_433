@@ -6,12 +6,45 @@ build-backend = "setuptools.build_meta"
 name = "pyrtl_433"
 version = "0.1.0"
 description = "Standalone async client for the rtl_433 WebSocket/HTTP API."
+readme = "README.md"
 requires-python = ">=3.14"
 license = "Apache-2.0"
+authors = [{ name = "Andrew Berry" }]
+keywords = ["rtl_433", "rtl-sdr", "websocket", "aiohttp", "asyncio", "sdr"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Framework :: AsyncIO",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Home Automation",
+]
 dependencies = ["aiohttp"]
+
+[project.urls]
+Homepage = "https://github.com/rtl-433-hass/pyrtl_433"
+Repository = "https://github.com/rtl-433-hass/pyrtl_433"
+Issues = "https://github.com/rtl-433-hass/pyrtl_433/issues"
+
+# uv-first dev tooling: `uv sync` installs this group by default; `uv run <tool>`
+# executes them. There are no pip-style requirements*.txt files.
+[dependency-groups]
+dev = [
+    "pytest>=9",
+    "pytest-asyncio>=1",
+    "pytest-aiohttp>=1.1",
+    "pytest-cov>=7",
+    "pytest-xdist>=3",
+    "mutmut==3.6.0",
+    "ruff==0.15.20",
+    "mypy>=1.19",
+]
 
 [tool.setuptools]
 packages = ["pyrtl_433"]
+
+[tool.mypy]
+strict = true
+files = ["pyrtl_433"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

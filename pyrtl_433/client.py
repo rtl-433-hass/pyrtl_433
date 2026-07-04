@@ -244,7 +244,7 @@ class Rtl433Client:
         item = await self._queue.get()
         if item is _STOP:
             raise StopAsyncIteration
-        return item
+        return item  # type: ignore[no-any-return]  # queue holds NormalizedEvent | _STOP
 
     # ------------------------------------------------------------------ #
     # Consumer-callback dispatch                                          #
@@ -286,7 +286,10 @@ class Rtl433Client:
 
         while not self._stop_event.is_set():
             try:
-                async with self._session.ws_connect(self.ws_url, heartbeat=30) as ws:
+                # self._session is set by start(); the loop only runs after that.
+                async with self._session.ws_connect(  # type: ignore[union-attr]
+                    self.ws_url, heartbeat=30
+                ) as ws:
                     self._ws = ws
                     self.connected = True
                     self._connection_time = self._now()
@@ -457,7 +460,7 @@ class Rtl433Client:
         """
         url = build_cmd_url(self.host, self.port, secure=self.secure)
         try:
-            async with self._session.get(
+            async with self._session.get(  # type: ignore[union-attr]
                 url,
                 params={"cmd": command},
                 timeout=aiohttp.ClientTimeout(total=_GETTER_TIMEOUT),
@@ -509,7 +512,7 @@ class Rtl433Client:
             params["arg"] = arg
         async with self._cmd_lock:
             try:
-                async with self._session.get(
+                async with self._session.get(  # type: ignore[union-attr]
                     url,
                     params=params,
                     timeout=aiohttp.ClientTimeout(total=_GETTER_TIMEOUT),
@@ -607,9 +610,11 @@ class Rtl433Client:
         """
         url = build_ws_url(host, port, path, secure=secure)
         try:
-            ws = await session.ws_connect(
-                url, timeout=aiohttp.ClientTimeout(total=_VALIDATE_TIMEOUT)
-            )
+            # Bound the handshake with asyncio.timeout: aiohttp's ws_connect
+            # ``timeout`` parameter is a ``ClientWSTimeout`` (receive/close), not a
+            # whole-connect deadline, so wrapping is the correct way to cap it.
+            async with asyncio.timeout(_VALIDATE_TIMEOUT):
+                ws = await session.ws_connect(url)
         except (aiohttp.ClientError, TimeoutError, OSError) as err:
             raise CannotConnect(f"Cannot connect to {url}: {err}") from err
         else:

@@ -190,7 +190,7 @@ def read_gain_auto(meta: dict[str, Any]) -> bool | None:
     gain = meta.get("gain")
     if gain is None:
         return None
-    return gain == ""
+    return bool(gain == "")
 
 
 def read_conversion_mode(meta: dict[str, Any]) -> int | None:

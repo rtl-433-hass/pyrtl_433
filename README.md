@@ -38,18 +38,24 @@ value transforms — you build any higher-level policy on top.
 
 ## Install
 
-Not yet published to PyPI. Once it is:
+This project is [uv](https://docs.astral.sh/uv/)-first. Not yet published to
+PyPI; once it is:
 
 ```sh
-pip install pyrtl_433
+uv add pyrtl_433
 ```
 
-From source, in a clone of this repository:
+From a clone of this repository:
 
 ```sh
-pip install .
-# or
 uv pip install .
+```
+
+Using pip instead of uv:
+
+```sh
+pip install pyrtl_433   # once published
+pip install .           # from a clone
 ```
 
 ## Quick start
@@ -242,15 +248,25 @@ enforced by the ratchet:
 | `_urls.py` | 22 / 22 | 1.000 |
 | **Overall** | **717 / 727** | **0.986** |
 
-Local commands:
+Local commands (uv-first — there are no `requirements*.txt` files; dev/test
+tooling lives in `pyproject.toml`'s `[dependency-groups]` and is locked in
+`uv.lock`):
 
 ```sh
-uv pip install -r requirements_test.txt
-uv run pytest -q                                          # run the test suite
-uv run mutmut run                                         # run mutation testing
-uv run python scripts/mutation_stats.py > stats.json      # collect per-module stats
+uv sync --dev            # create the venv + install dev/test tooling from uv.lock
+# or: bash scripts/setup.sh
+
+uv run pytest -n auto                                   # run the test suite (parallel)
+uv run ruff check . && uv run ruff format --check .     # lint + format
+uv run mypy pyrtl_433/                                  # strict type check
+uv run mutmut run                                       # mutation testing
+uv run python scripts/mutation_stats.py > stats.json    # collect per-module stats
 uv run python scripts/mutation_ratchet.py --mode floor --stats stats.json  # enforce the floor
 ```
+
+Continuous integration runs the same gates (lint, format, strict mypy, tests
+with a 95% coverage floor, and the mutation-score ratchet) on every push and pull
+request via GitHub Actions — see [`.github/workflows/`](.github/workflows/).
 
 ## License
 

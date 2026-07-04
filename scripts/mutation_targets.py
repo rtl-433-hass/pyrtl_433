@@ -25,7 +25,7 @@ Mapping rules (given changed paths on argv):
   deliberately left out, so they still escalate — a full run is correct when they
   change.
 * Any change to mutation infrastructure or shared test scaffolding
-  (``pyproject.toml``, ``requirements_test.txt``, ``tests/conftest.py``,
+  (``pyproject.toml``, ``uv.lock``, ``tests/conftest.py``,
   ``scripts/mutation_*.py``) escalates to a full run, because it can change
   results package-wide.
 
@@ -49,7 +49,7 @@ PKG_DOTTED = "pyrtl_433"
 # Changes to these escalate to a full run (they can move results package-wide).
 FULL_RUN_TRIGGERS = {
     "pyproject.toml",
-    "requirements_test.txt",
+    "uv.lock",
     "tests/conftest.py",
     "scripts/mutation_stats.py",
     "scripts/mutation_ratchet.py",
