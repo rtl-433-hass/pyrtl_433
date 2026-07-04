@@ -25,8 +25,8 @@ the HTTP `/cmd` endpoint that reports and controls the SDR configuration.
 
 ## Next steps
 
-- [Installation](installation.md) — requirements and how to install.
-- [Quick Start](quickstart.md) — connect and consume events in a few lines.
+- [Getting Started](quickstart.md) — install, then connect and consume events in
+  a few lines.
 - [API Reference](api-reference.md) — the client constructor, runtime snapshots,
   and module map.
 - [Protocol Reference](protocol-reference.md) — the rtl_433 server's
