@@ -23,6 +23,7 @@ dependencies = ["aiohttp"]
 [project.urls]
 Homepage = "https://github.com/rtl-433-hass/pyrtl_433"
 Repository = "https://github.com/rtl-433-hass/pyrtl_433"
+Documentation = "https://rtl-433-hass.github.io/pyrtl_433/"
 Issues = "https://github.com/rtl-433-hass/pyrtl_433/issues"
 
 # uv-first dev tooling: `uv sync` installs this group by default; `uv run <tool>`
