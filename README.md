@@ -1,7 +1,7 @@
-# pyrtl_433
+# 📻 pyrtl_433
 
 A standalone, dependency-light async client for the rtl_433 HTTP server's
-WebSocket + `/cmd` API. No Home Assistant required.
+WebSocket + `/cmd` API.
 
 ## Overview
 
