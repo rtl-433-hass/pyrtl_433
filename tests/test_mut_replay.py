@@ -232,3 +232,51 @@ class TestParseEventTime:
     def test_unparsable_or_non_string_is_none(self, raw):
         """Missing / blank / garbage / non-string -> None, never raising."""
         assert parse_event_time(raw) is None
+
+    def test_strptime_fallback_no_fraction(self):
+        """A non-zero-padded local time (rejected by ``fromisoformat``) uses the
+        no-fraction ``strptime`` fallback format.
+
+        ``"2026-5-9 3:4:5"`` is not valid ISO-8601 (unpadded), so it drops into the
+        explicit-format fallback loop and matches ``"%Y-%m-%d %H:%M:%S"``. This is
+        the only path that exercises that second format string / the loop's
+        ``strptime``+``break``+``continue`` structure, so it kills the mutants that
+        mangle the second format, replace ``strptime`` with ``None``, turn the
+        ``break`` into a ``return``, or turn the ``except`` ``continue`` into a
+        ``break`` (which would abandon the loop before reaching this format).
+        """
+        parsed = parse_event_time("2026-5-9 3:4:5")
+        assert parsed is not None
+        expected = datetime(2026, 5, 9, 3, 4, 5).astimezone(UTC)
+        assert parsed == expected
+
+    def test_strptime_fallback_with_fraction(self):
+        """A non-zero-padded local time *with* fractional seconds uses the first
+        ``strptime`` fallback format (``%...%S.%f``).
+
+        ``"2026-5-9 3:4:5.5"`` is rejected by ``fromisoformat`` (unpadded) and only
+        the ``"%Y-%m-%d %H:%M:%S.%f"`` fallback format parses it (the no-fraction
+        format fails on the trailing ``.5``). Pins the fractional fallback format
+        and preserves the ``.500000`` component.
+        """
+        parsed = parse_event_time("2026-5-9 3:4:5.5")
+        assert parsed is not None
+        expected = datetime(2026, 5, 9, 3, 4, 5, 500000).astimezone(UTC)
+        assert parsed == expected
+
+
+# --------------------------------------------------------------------------- #
+# Documented EQUIVALENT mutant on parse_event_time (not forced).               #
+# --------------------------------------------------------------------------- #
+# One surviving mutant is genuinely equivalent: ``if parsed.tzinfo is None:`` ->
+# ``if parsed.tzinfo is not None:`` (mutmut_21). Both branches reduce to the same
+# UTC instant:
+#   * naive input: original attaches the local zone then ``astimezone(UTC)``; the
+#     mutant skips the attach and calls ``astimezone(UTC)`` directly -- but a naive
+#     datetime's ``astimezone`` already assumes local time, so the result is
+#     identical.
+#   * aware input: original skips the attach and calls ``astimezone(UTC)``; the
+#     mutant first re-expresses it in the local zone (``astimezone()``) then
+#     ``astimezone(UTC)`` -- a round trip back to the same UTC instant.
+# No input distinguishes the two, so it is recorded here rather than suppressed.
+# ``parse_event_time``'s live UTC-reduction behaviour is fully pinned above.

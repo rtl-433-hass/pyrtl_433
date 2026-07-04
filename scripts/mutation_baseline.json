@@ -1,0 +1,32 @@
+{
+  "files": {
+    "pyrtl_433/_urls.py": {
+      "killed": 22,
+      "score": 1.0,
+      "total": 22
+    },
+    "pyrtl_433/client.py": {
+      "killed": 453,
+      "score": 0.986928,
+      "total": 459
+    },
+    "pyrtl_433/normalizer.py": {
+      "killed": 74,
+      "score": 0.986667,
+      "total": 75
+    },
+    "pyrtl_433/replay.py": {
+      "killed": 100,
+      "score": 0.990099,
+      "total": 101
+    },
+    "pyrtl_433/sdr.py": {
+      "killed": 68,
+      "score": 0.971429,
+      "total": 70
+    }
+  },
+  "floor": 0.7,
+  "tolerance_fraction": 0.02,
+  "tolerance_mutants": 3
+}

@@ -23,6 +23,9 @@ from pyrtl_433.sdr import (
     KEY_CONVERSION_MODE,
     KEY_GAIN_AUTO,
     KEY_GAIN_DB,
+    KEY_HOP_INTERVAL,
+    KEY_PPM_ERROR,
+    KEY_SAMPLE_RATE,
     SDR_COMMANDS_BY_KEY,
     conversion_val_to_label,
     int_command,
@@ -219,3 +222,85 @@ class TestOutboundTransforms:
         assert int_command(3.9) == 3
         assert int_command(2.0) == 2
         assert isinstance(int_command(2.0), int)
+
+
+# --------------------------------------------------------------------------- #
+# Plain meta.get(<key>) readers: exact key, correct value pass-through.        #
+# --------------------------------------------------------------------------- #
+class TestPlainMetaReaders:
+    """read_sample_rate / read_ppm_error / read_hop_interval read the right key.
+
+    Each is a bare ``meta.get("<key>")``; the mutation set flips the key to
+    ``None`` / a mangled string / an upper-cased string. Reading a value back out
+    under the real key (and ``None`` for a wrong/absent key) fails the moment the
+    key is mutated, so these pin the exact ``meta`` field each control samples.
+    """
+
+    def test_read_sample_rate_uses_samp_rate_key(self):
+        """SAMPLE_RATE reads meta['samp_rate'] verbatim (note the wire spelling)."""
+        read = SDR_COMMANDS_BY_KEY[KEY_SAMPLE_RATE].read
+        assert read({"samp_rate": 250000}) == 250000
+        assert read({}) is None
+        # Wrong-key mutants (None / "XXsamp_rateXX" / "SAMP_RATE") read nothing here.
+        assert read({"SAMP_RATE": 250000}) is None
+        assert read({"sample_rate": 250000}) is None
+
+    def test_read_ppm_error_uses_ppm_error_key(self):
+        """PPM_ERROR reads meta['ppm_error'] verbatim, including 0."""
+        read = SDR_COMMANDS_BY_KEY[KEY_PPM_ERROR].read
+        assert read({"ppm_error": 2}) == 2
+        assert read({"ppm_error": 0}) == 0
+        assert read({}) is None
+        assert read({"PPM_ERROR": 2}) is None
+
+    def test_read_hop_interval_uses_hop_interval_key(self):
+        """HOP_INTERVAL reads meta['hop_interval'] verbatim."""
+        read = SDR_COMMANDS_BY_KEY[KEY_HOP_INTERVAL].read
+        assert read({"hop_interval": 600}) == 600
+        assert read({}) is None
+        assert read({"HOP_INTERVAL": 600}) is None
+
+
+# --------------------------------------------------------------------------- #
+# Capability / availability default gate (``_always``).                        #
+# --------------------------------------------------------------------------- #
+class TestAlwaysGate:
+    """The default capability/availability gate returns True for any meta.
+
+    Every command's ``capability`` defaults to ``_always`` (and the fields with no
+    availability override use it for ``available`` too). Pinning both to ``True``
+    kills the ``_always`` mutant that flips the default to ``False`` (which would
+    hide every managed control).
+    """
+
+    def test_default_capability_is_always_true(self):
+        cmd = SDR_COMMANDS_BY_KEY[KEY_SAMPLE_RATE]
+        assert cmd.capability({}) is True
+        assert cmd.capability({"anything": 1}) is True
+
+    def test_default_availability_is_always_true(self):
+        # sample_rate / ppm_error carry no availability override, so their
+        # ``available`` is the ``_always`` default.
+        assert SDR_COMMANDS_BY_KEY[KEY_SAMPLE_RATE].available({}) is True
+        assert SDR_COMMANDS_BY_KEY[KEY_PPM_ERROR].available({"frequencies": []}) is True
+
+
+# --------------------------------------------------------------------------- #
+# Documented EQUIVALENT mutants on read_gain_db (not forced).                  #
+# --------------------------------------------------------------------------- #
+# Two surviving mutants on ``read_gain_db`` are genuinely equivalent because the
+# ``except (TypeError, ValueError)`` fall-through returns the same ``None`` the
+# early guard returns:
+#
+#   * ``if gain is None or gain == "":`` -> ``... and gain == "":`` (mutmut_5).
+#     For ``gain is None`` the guard no longer short-circuits, so ``float(None)``
+#     raises ``TypeError`` -> caught -> ``None``. For ``gain == ""`` the guard no
+#     longer short-circuits, so ``float("")`` raises ``ValueError`` -> caught ->
+#     ``None``. Every input yields the identical result, so no assertion can
+#     distinguish it (matching the parent's documented equivalent-mutant class).
+#   * ``gain == ""`` -> ``gain == "XXXX"`` (mutmut_8). ``""`` now misses the guard
+#     and reaches ``float("")`` -> ``ValueError`` -> ``None``; a literal ``"XXXX"``
+#     would be caught either by the (dead) guard or by ``float`` -> ``None``. The
+#     observable return is unchanged for every input, so it is equivalent.
+# These are recorded here (never suppressed) rather than chased with a contrived
+# assertion; ``read_gain_db``'s live behaviour is fully pinned by TestReadGainDb.

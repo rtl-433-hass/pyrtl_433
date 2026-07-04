@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 from datetime import UTC, datetime
 import inspect
+import json
 import logging
 
 import aiohttp
@@ -25,6 +26,8 @@ import pytest
 from pyrtl_433.client import CannotConnect, Rtl433Client
 
 HOST = "rtl433.local"
+CMD_URL = "http://rtl433.local:8433/cmd"
+WS_URL = "ws://rtl433.local:8433/ws"
 
 
 # --------------------------------------------------------------------------- #
@@ -259,6 +262,14 @@ async def test_malformed_json_logged_once_then_recovers(
     message = errors[0].getMessage()
     assert "get_stats" in message
     assert "invalid data" in message
+    # Pin the exact operator-facing text: names the command, the /cmd URL it hit,
+    # and the underlying parse error. Kills the mutants that null a format arg
+    # (url/err) or mangle a message segment (they keep "get_stats"/"invalid data"
+    # but change the URL, the error tail, or a wrapped substring).
+    assert message == (
+        "pyrtl_433 server returned invalid data for 'get_stats' "
+        f"(at {CMD_URL}); the related hub sensors will not update: truncated body"
+    )
 
     # Recovery: a valid body clears the dedup flag and returns the payload.
     fake_session.cmd_responses["get_stats"] = {"result": {"frames": 1}}
@@ -430,6 +441,9 @@ async def test_stop_while_connected_cancels_connect_loop(
     await client.start()
     await asyncio.wait_for(connected.wait(), timeout=1)
     assert client.connected is True
+    # While connected the live socket is stashed on ``self._ws`` (kills the mutant
+    # that assigns ``self._ws = None`` on connect).
+    assert client._ws is blocking_ws
 
     await client.stop()  # cancels the connect task blocked in the read loop
 
@@ -484,7 +498,7 @@ async def test_async_on_event_callback_scheduled_and_runs(make_client, fake_cloc
     assert client._callback_tasks == set()
 
 
-async def test_sync_callback_exception_is_swallowed(make_client):
+async def test_sync_callback_exception_is_swallowed(make_client, caplog):
     """A raising sync callback is caught so it cannot kill the frame path."""
 
     def boom():
@@ -492,9 +506,13 @@ async def test_sync_callback_exception_is_swallowed(make_client):
 
     client = make_client(on_hub_update=boom)
 
-    client._handle_shutdown()  # must not raise
+    with caplog.at_level(logging.ERROR, logger="pyrtl_433.client"):
+        client._handle_shutdown()  # must not raise
 
     assert client.connected is False
+    # The swallow is logged with the exact fixed message (kills the mutants that
+    # null/mangle the ``LOGGER.exception`` string).
+    assert "pyrtl_433 consumer callback raised" in caplog.messages
 
 
 async def test_async_callback_failure_is_logged(make_client, caplog):
@@ -511,6 +529,9 @@ async def test_async_callback_failure_is_logged(make_client, caplog):
         await asyncio.sleep(0)  # let the done-callback run
 
     assert "async consumer callback failed" in caplog.text
+    # Exact message including the failing exception (kills the mutants that null
+    # the ``%s`` arg, drop it, or wrap the format string).
+    assert "pyrtl_433 async consumer callback failed: async bad hook" in caplog.messages
 
 
 # --------------------------------------------------------------------------- #
@@ -553,3 +574,280 @@ async def test_validate_connection_unexpected_error_propagates(fake_session):
 
     with pytest.raises(ValueError):
         await Rtl433Client.validate_connection(fake_session, HOST, 8433, "/ws")
+
+
+# --------------------------------------------------------------------------- #
+# Lifecycle: asyncio task names + start/stop DEBUG log lines                    #
+# --------------------------------------------------------------------------- #
+async def test_start_stop_task_names_and_logs(make_client, fake_session, caplog):
+    """start()/stop() name their tasks per host:port and log the exact lifecycle
+    lines.
+
+    The two ``create_task`` calls carry ``name=f"pyrtl_433 ws {host}:{port}"`` and
+    ``name=f"pyrtl_433 refresh {host}:{port}"`` (kills the mutants that null/drop
+    the task name), and start/stop each emit a fixed DEBUG line naming the ws URL
+    (kills the log-message/arg mutants).
+    """
+    client = make_client()
+    fake_session.default_ws_outcome = aiohttp.ClientError("down")
+
+    with caplog.at_level(logging.DEBUG, logger="pyrtl_433.client"):
+        await client.start()
+        assert client._task.get_name() == "pyrtl_433 ws rtl433.local:8433"
+        assert client._refresh_task.get_name() == "pyrtl_433 refresh rtl433.local:8433"
+        await client.stop()
+
+    msgs = caplog.messages
+    assert f"pyrtl_433 client started for {WS_URL}" in msgs
+    assert f"pyrtl_433 client stopped for {WS_URL}" in msgs
+
+
+# --------------------------------------------------------------------------- #
+# Connect loop: DEBUG log lines on connect / anchor / disconnect / error        #
+# --------------------------------------------------------------------------- #
+async def test_connect_loop_success_and_disconnect_logs(
+    make_client, fake_session, fake_clock, monkeypatch, caplog
+):
+    """A successful (empty) connect emits the exact connected + anchor lines, and
+    the drop emits the exact disconnect/backoff line.
+
+    The anchor line interpolates the ws URL, the connection time, and the
+    high-water mark (``none`` here), so pinning the full string kills every
+    message-segment, arg-null, and arg-drop mutant on that multi-line log (a
+    dropped arg raises ``TypeError`` at format time, which also fails the test).
+    The disconnect line pins the ``%.0fs`` backoff rendering (1.0 -> ``1s``).
+    """
+    fake_clock.set(datetime(2026, 5, 25, 10, 0, 0, tzinfo=UTC))
+    client = make_client()
+    fake_session.ws_outcomes.append([])  # one empty, successful connect
+    fake_session.default_ws_outcome = aiohttp.ClientError("down")
+    recorded: list[float] = []
+    _patch_wait_for(monkeypatch, client, recorded, stop_after=1)
+
+    with caplog.at_level(logging.DEBUG, logger="pyrtl_433.client"):
+        await client._connect_loop()
+
+    msgs = caplog.messages
+    assert f"pyrtl_433 connected to {WS_URL}" in msgs
+    assert (
+        f"pyrtl_433 connection anchor for {WS_URL}: "
+        "connected_at=2026-05-25T10:00:00+00:00 replay_high_water=none "
+        "(frames at/below high-water, or before connected_at, are suppressed "
+        "as replays)"
+    ) in msgs
+    assert f"pyrtl_433 disconnected from {WS_URL}; reconnecting in 1s" in msgs
+
+
+async def test_connect_loop_error_log(make_client, fake_session, monkeypatch, caplog):
+    """A connect that raises logs the exact connection-error line (URL + error)."""
+    client = make_client()
+    fake_session.default_ws_outcome = aiohttp.ClientError("down")
+    recorded: list[float] = []
+    _patch_wait_for(monkeypatch, client, recorded, stop_after=1)
+
+    with caplog.at_level(logging.DEBUG, logger="pyrtl_433.client"):
+        await client._connect_loop()
+
+    assert f"pyrtl_433 connection error for {WS_URL}: down" in caplog.messages
+
+
+# --------------------------------------------------------------------------- #
+# _handle_text_frame: malformed-JSON and non-object DEBUG log lines             #
+# --------------------------------------------------------------------------- #
+async def test_handle_text_frame_malformed_json_log(make_client, caplog):
+    """A malformed JSON frame is skipped with the exact ``%s``-formatted error."""
+    bad = "{bad json"
+    try:
+        json.loads(bad)
+    except ValueError as e:
+        err = str(e)
+
+    client = make_client()
+    with caplog.at_level(logging.DEBUG, logger="pyrtl_433.client"):
+        client._handle_text_frame(bad)
+
+    assert f"pyrtl_433 skipping malformed JSON frame: {err}" in caplog.messages
+
+
+async def test_handle_text_frame_non_object_log(make_client, caplog):
+    """A valid but non-object frame is skipped with the ``%r`` of its first 120
+    chars.
+
+    The frame is a JSON string > 121 chars so ``text[:120]`` and ``text[:121]``
+    differ, killing the slice-bound mutant along with the message/arg mutants.
+    """
+    frame = json.dumps("z" * 130)  # a quoted JSON string, ~132 chars, not an object
+    text = frame.strip()
+
+    client = make_client()
+    with caplog.at_level(logging.DEBUG, logger="pyrtl_433.client"):
+        client._handle_text_frame(frame)
+
+    assert f"pyrtl_433 skipping non-object frame: {text[:120]!r}" in caplog.messages
+
+
+# --------------------------------------------------------------------------- #
+# _process_event: the RX DEBUG line (live + no-timestamp)                       #
+# --------------------------------------------------------------------------- #
+async def test_process_event_rx_log_live(make_client, fake_clock, caplog):
+    """A live frame logs the exact RX line: key, fields, ISO time, verdict label."""
+    fake_clock.set(datetime(2026, 5, 25, 10, 0, 0, tzinfo=UTC))
+    client = make_client()
+
+    with caplog.at_level(logging.DEBUG, logger="pyrtl_433.client"):
+        client._process_event(
+            {
+                "time": "2026-05-25T10:00:00Z",
+                "model": "X",
+                "id": 1,
+                "temperature_C": 1.0,
+            }
+        )
+
+    assert (
+        "pyrtl_433 RX X-1 fields={'temperature_C': 1.0} "
+        "time=2026-05-25T10:00:00+00:00 -> LIVE (event_time>high_water)"
+    ) in caplog.messages
+
+
+async def test_process_event_rx_log_no_timestamp(make_client, fake_clock, caplog):
+    """A no-timestamp frame logs ``time=none`` and is still emitted.
+
+    The RX line renders the time via ``event_time.isoformat() if event_time is
+    not None else "none"``. A mutant flipping that guard to ``is None`` would call
+    ``None.isoformat()`` while building the log args and raise before emitting, so
+    asserting the frame is emitted (and the exact ``time=none`` text) kills it plus
+    the two ``"none"`` literal mutants.
+    """
+    fake_clock.set(datetime(2026, 5, 25, 10, 0, 0, tzinfo=UTC))
+    seen = []
+    client = make_client(on_event=seen.append)
+
+    with caplog.at_level(logging.DEBUG, logger="pyrtl_433.client"):
+        client._process_event({"model": "X", "id": 1, "temperature_C": 1.0})
+
+    assert len(seen) == 1  # emitted (no AttributeError while building the log args)
+    assert (
+        "pyrtl_433 RX X-1 fields={'temperature_C': 1.0} "
+        "time=none -> LIVE (no-timestamp)"
+    ) in caplog.messages
+
+
+# --------------------------------------------------------------------------- #
+# _handle_shutdown: the announced-shutdown DEBUG line (connected branch)         #
+# --------------------------------------------------------------------------- #
+async def test_handle_shutdown_logs_when_connected(make_client, caplog):
+    """A shutdown while connected logs the exact announced-shutdown line."""
+    client = make_client()
+    client.connected = True
+
+    with caplog.at_level(logging.DEBUG, logger="pyrtl_433.client"):
+        client._handle_shutdown()
+
+    assert f"pyrtl_433 server announced shutdown for {WS_URL}" in caplog.messages
+
+
+# --------------------------------------------------------------------------- #
+# _fetch_cmd / _send_cmd: the getter/setter failure DEBUG lines                 #
+# --------------------------------------------------------------------------- #
+def _raise_client_error(_params):
+    raise aiohttp.ClientError("kaboom")
+
+
+async def test_fetch_cmd_getter_failure_debug_log(make_client, fake_session, caplog):
+    """A getter whose request raises logs the exact ``getter <cmd> failed`` line."""
+    fake_session.cmd_responses["get_meta"] = _raise_client_error
+    client = make_client()
+
+    with caplog.at_level(logging.DEBUG, logger="pyrtl_433.client"):
+        assert await client._fetch_cmd("get_meta") is None
+
+    assert f"pyrtl_433 getter get_meta failed at {CMD_URL}: kaboom" in caplog.messages
+
+
+async def test_send_cmd_failure_debug_log(make_client, fake_session, caplog):
+    """A setter whose request raises logs the exact ``/cmd <cmd> failed`` line."""
+    fake_session.cmd_responses["gain"] = _raise_client_error
+    client = make_client()
+
+    with caplog.at_level(logging.DEBUG, logger="pyrtl_433.client"):
+        assert await client._send_cmd("gain", arg="") is False
+
+    assert f"pyrtl_433 /cmd gain failed at {CMD_URL}: kaboom" in caplog.messages
+
+
+# --------------------------------------------------------------------------- #
+# refresh_meta: the raw ``hop_times`` list is copied under its own key           #
+# --------------------------------------------------------------------------- #
+async def test_refresh_meta_stores_raw_hop_times(make_client, fake_session):
+    """The raw ``hop_times`` list is copied into ``meta`` under the ``hop_times``
+    key.
+
+    This is independent of the derived scalar ``hop_interval``: the extract loop
+    lists ``"hop_times"`` among the copied keys, so a mutant mangling that key
+    would drop the raw list from ``meta``.
+    """
+    fake_session.cmd_responses.update(
+        {
+            "get_meta": {"result": {"hop_times": [300, 999]}},
+            "get_gain": {"result": None},
+            "get_ppm_error": {"result": None},
+        }
+    )
+    client = make_client()
+
+    await client.refresh_meta()
+
+    assert client.meta["hop_times"] == [300, 999]
+    assert client.meta["hop_interval"] == 300  # still derived from hop_times[0]
+
+
+# --------------------------------------------------------------------------- #
+# refresh_dev_info: an info-only change still fires on_hub_update                #
+# --------------------------------------------------------------------------- #
+async def test_refresh_dev_info_fires_on_info_only_change(make_client, fake_session):
+    """When only dev_info changes (query empty), ``changed`` must become True and
+    fire.
+
+    The empty query is not stored, so the ``on_hub_update`` signal depends solely
+    on the info branch setting ``changed = True``; a mutant setting it to
+    ``False``/``None`` there would suppress the (real) update.
+    """
+    fake_session.cmd_responses.update(
+        {
+            "get_dev_info": {"result": {"vendor": "Realtek"}},
+            "get_dev_query": {"result": ""},  # empty -> not stored -> info-only change
+        }
+    )
+    calls: list[int] = []
+    client = make_client(on_hub_update=lambda: calls.append(1))
+
+    await client.refresh_dev_info()
+
+    assert client.dev_info == {"vendor": "Realtek"}
+    assert client.dev_query is None
+    assert len(calls) == 1  # info-only change still fires the hub-update signal
+
+
+# --------------------------------------------------------------------------- #
+# Documented EQUIVALENT mutants on pyrtl_433.client (not forced).               #
+# --------------------------------------------------------------------------- #
+# The following surviving mutants are genuinely equivalent -- no input/observation
+# distinguishes them -- and are recorded here rather than suppressed, mirroring the
+# equivalent-mutant class the parent's coordinator/base.py floor carries:
+#
+#   * ``_connect_loop``: ``if self._stop_event.is_set(): break`` -> ``return``.
+#     The ``while`` loop is the final statement of the coroutine, so breaking out
+#     of it and returning from it are identical.
+#   * ``_refresh_loop``: same ``break`` -> ``return`` on the post-wait stop check;
+#     the loop is the last statement, so the two are identical.
+#   * ``_read_frames``: both the stop-event ``break`` and the CLOSE/ERROR ``break``
+#     -> ``return``. The ``async for`` is the last statement of the method, and it
+#     is simply awaited by the caller, so break-then-return and return coincide.
+#   * ``refresh_dev_info``: ``info = None`` -> ``info = ""`` in the malformed-JSON
+#     ``except``. ``info`` is only consumed by ``isinstance(info, dict)`` next,
+#     which is ``False`` for both ``None`` and ``""``, so the outcome is identical.
+#   * ``refresh_dev_info``: initial ``changed = False`` -> ``changed = None``. The
+#     variable is only read by the final ``if changed:``; ``None`` and ``False``
+#     are both falsy and every write sets it to ``True``, so behaviour is identical.
+# Every live path around these is pinned by the tests above.
