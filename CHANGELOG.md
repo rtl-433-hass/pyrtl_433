@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.1](https://github.com/rtl-433-hass/pyrtl_433/compare/v0.1.0...v0.1.1) (2026-07-05)
+
+
+### Bug Fixes
+
+* **replay:** interpret naive timestamps in an injectable time zone ([aa71400](https://github.com/rtl-433-hass/pyrtl_433/commit/aa71400bbce388f2e48e21397e7febad2712a58d))
+
 ## 0.1.0 (2026-07-04)
 
 
