@@ -18,6 +18,7 @@ from __future__ import annotations
 import asyncio
 from datetime import UTC, datetime
 import json
+from zoneinfo import ZoneInfo
 
 import aiohttp
 import pytest
@@ -162,6 +163,30 @@ async def test_replay_frame_flagged_is_replay(make_client, fake_clock):
 
     assert len(seen) == 1
     assert seen[0].is_replay is True  # still emitted so it can seed values
+
+
+async def test_event_tz_interprets_naive_timestamp(make_client, fake_clock):
+    """``event_tz`` classifies an offset-less timestamp in the injected zone.
+
+    Regression guard for consuming this client from Home Assistant: with a naive
+    rtl_433 ``time`` and a host process zone that differs from the consumer's,
+    the frame must be classified in ``event_tz`` (here America/New_York), not the
+    host zone. ``now`` = 14:00:10 UTC; the naive '10:00:00' in EDT == 14:00:00
+    UTC, so the frame is ~10s old -> LIVE, and its ``event_time`` is 14:00 UTC.
+    """
+    ny = ZoneInfo("America/New_York")
+    fake_clock.set(datetime(2026, 5, 25, 14, 0, 10, tzinfo=UTC))
+    seen: list[NormalizedEvent] = []
+    client = make_client(on_event=seen.append, event_tz=ny)
+
+    client._handle_text_frame(
+        '{"time": "2026-05-25 10:00:00", "model": "Acurite-606TX", '
+        '"id": 42, "temperature_C": 21.37}'
+    )
+
+    assert len(seen) == 1
+    assert seen[0].event_time == datetime(2026, 5, 25, 14, 0, 0, tzinfo=UTC)
+    assert seen[0].is_replay is False
 
 
 async def test_stale_gap_frame_flagged_is_replay(make_client, fake_clock):
