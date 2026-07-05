@@ -17,7 +17,7 @@ reasoned about and unit-tested in isolation.
 from __future__ import annotations
 
 import dataclasses
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta, tzinfo
 import logging
 from typing import Any
 
@@ -133,15 +133,17 @@ def _parse_local_naive(text: str) -> datetime | None:
     return None
 
 
-def parse_event_time(raw: Any) -> datetime | None:
+def parse_event_time(raw: Any, *, default_tz: tzinfo | None = None) -> datetime | None:
     """Parse an rtl_433 ``time`` value to a comparable UTC instant, or ``None``.
 
     rtl_433 stamps ``time`` either as a local ``"YYYY-MM-DD HH:MM:SS"`` string
     (optionally with fractional seconds) or as ISO-8601 with an offset / ``Z``,
     depending on server config. This reduces both to a single UTC basis so the
-    replay classification can compare them: local-naive values are interpreted in
-    the system local time zone (the NTP-sync assumption documented on
-    :data:`REPLAY_STALE_THRESHOLD`), offset-aware values are converted as-is.
+    replay classification can compare them. A local-naive value is interpreted in
+    ``default_tz`` when one is supplied (e.g. the consumer's configured time zone,
+    such as Home Assistant's), otherwise in the system local time zone (the
+    NTP-sync assumption documented on :data:`REPLAY_STALE_THRESHOLD`); an
+    offset-aware value is converted as-is and ``default_tz`` is ignored.
 
     A missing, blank, or unparsable value yields ``None`` ("no usable timestamp"
     -- the frame is then treated as live). Never raises into the frame loop.
@@ -165,10 +167,16 @@ def parse_event_time(raw: Any) -> datetime | None:
         return None
     try:
         if parsed.tzinfo is None:
-            # A naive value is interpreted in the system local time zone (mirrors
-            # ``dt_util.as_utc`` treating a naive datetime as DEFAULT_TIME_ZONE):
-            # attach the local zone for that specific instant, DST-correct.
-            parsed = parsed.astimezone()
+            if default_tz is not None:
+                # Interpret the naive wall-clock in the caller-supplied zone
+                # (mirrors ``dt_util.as_utc`` treating a naive datetime as the
+                # consumer's DEFAULT_TIME_ZONE). ``replace`` is DST-correct for
+                # that instant with a ``ZoneInfo``.
+                parsed = parsed.replace(tzinfo=default_tz)
+            else:
+                # No zone supplied: fall back to the system local zone for that
+                # specific instant, DST-correct.
+                parsed = parsed.astimezone()
         # Reduce every form to a single comparable UTC basis.
         return parsed.astimezone(UTC)
     except OSError, OverflowError, ValueError:

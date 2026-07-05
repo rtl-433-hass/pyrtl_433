@@ -33,7 +33,7 @@ import asyncio
 from collections.abc import Callable
 import contextlib
 import dataclasses
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta, tzinfo
 import inspect
 import json
 import logging
@@ -108,13 +108,18 @@ class Rtl433Client:
         on_event: Callable[[NormalizedEvent], Any] | None = None,
         on_hub_update: Callable[[], Any] | None = None,
         clock: Callable[[], datetime] | None = None,
+        event_tz: tzinfo | None = None,
     ) -> None:
         """Initialize the client with connection params and runtime state.
 
         ``session`` is the injected :class:`aiohttp.ClientSession`; pass ``None``
         to have the client create and own one (closed by :meth:`stop`). ``clock``
         supplies the current UTC instant (injectable for tests); it defaults to
-        ``datetime.now(UTC)``.
+        ``datetime.now(UTC)``. ``event_tz`` is the zone in which offset-less
+        rtl_433 ``time`` stamps are interpreted for replay classification; pass
+        the consumer's configured zone (e.g. Home Assistant's ``DEFAULT_TIME_ZONE``)
+        so it does not depend on the host process time zone. Defaults to ``None``
+        (system local zone).
         """
         self.host = host
         self.port = port
@@ -133,6 +138,9 @@ class Rtl433Client:
         self._clock: Callable[[], datetime] = (
             clock if clock is not None else (lambda: datetime.now(UTC))
         )
+        # Zone for interpreting offset-less rtl_433 timestamps (``None`` -> system
+        # local zone); threaded into :func:`parse_event_time` per frame.
+        self._event_tz = event_tz
 
         # Keys dropped from measurement fields. ``time`` is always excluded: it is
         # read raw for the replay classification and must never reach a consumer as
@@ -411,7 +419,7 @@ class Rtl433Client:
 
         # Read the raw ``time`` independently of ``normalize`` (which drops it) and
         # classify the frame into live / replay / stale gap / pre-connection backlog.
-        event_time = parse_event_time(event.get("time"))
+        event_time = parse_event_time(event.get("time"), default_tz=self._event_tz)
         verdict = classify_replay(
             event_time,
             now,

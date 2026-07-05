@@ -9,6 +9,7 @@ dropped format, min->max) cause at least one assertion to fail.
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -224,6 +225,27 @@ class TestParseEventTime:
     def test_surrounding_whitespace_is_stripped(self):
         """Leading/trailing whitespace is stripped before parsing."""
         assert parse_event_time("  2026-05-25T10:00:00Z  ") == _utc(10, 0, 0)
+
+    def test_default_tz_interprets_naive_wall_clock(self):
+        """A naive local time is interpreted in ``default_tz``, not the host zone.
+
+        2026-05-25 is EDT (UTC-4) in New York, so 10:00 local -> 14:00 UTC. This
+        is independent of the process ``TZ`` (the whole point of the parameter).
+        """
+        ny = ZoneInfo("America/New_York")
+        assert parse_event_time("2026-05-25 10:00:00", default_tz=ny) == _utc(14, 0, 0)
+
+    def test_default_tz_ignored_for_offset_aware(self):
+        """An offset-aware value ignores ``default_tz`` and converts as-is."""
+        ny = ZoneInfo("America/New_York")
+        assert parse_event_time("2026-05-25T10:00:00+05:30", default_tz=ny) == _utc(
+            4, 30, 0
+        )
+
+    def test_default_tz_none_matches_system_local(self):
+        """Omitting ``default_tz`` preserves the system-local interpretation."""
+        raw = "2026-05-25 10:00:00"
+        assert parse_event_time(raw) == datetime(2026, 5, 25, 10, 0, 0).astimezone(UTC)
 
     @pytest.mark.parametrize(
         "raw",
