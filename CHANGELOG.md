@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.0](https://github.com/rtl-433-hass/pyrtl_433/compare/v0.1.1...v0.2.0) (2026-07-17)
+
+
+### Features
+
+* **client:** parse "Auto Level" log frames into noise/min-level state ([#9](https://github.com/rtl-433-hass/pyrtl_433/issues/9)) ([c7559e6](https://github.com/rtl-433-hass/pyrtl_433/commit/c7559e6ed338357c3120cbe82186bcb6b8bca086))
+
 ## [0.1.1](https://github.com/rtl-433-hass/pyrtl_433/compare/v0.1.0...v0.1.1) (2026-07-05)
 
 
