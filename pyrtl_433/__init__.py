@@ -6,11 +6,14 @@ Assistant integration (Apache-2.0). Nothing here imports Home Assistant.
 
 from __future__ import annotations
 
+from .autolevel import AUTO_LEVEL_SRC, AutoLevelReading, parse_auto_level
 from .client import CannotConnect, Rtl433Client
 from .normalizer import NormalizedEvent, device_key, normalize
 from .replay import ReplayVerdict, classify_replay
 
 __all__ = [
+    "AUTO_LEVEL_SRC",
+    "AutoLevelReading",
     "CannotConnect",
     "NormalizedEvent",
     "ReplayVerdict",
@@ -18,4 +21,5 @@ __all__ = [
     "classify_replay",
     "device_key",
     "normalize",
+    "parse_auto_level",
 ]

@@ -224,6 +224,143 @@ async def test_shutdown_frame_flips_connectivity_and_fires_hub_update(make_clien
 
 
 # --------------------------------------------------------------------------- #
+# Server log frames: raw on_log forwarding + "Auto Level" noise parsing        #
+# --------------------------------------------------------------------------- #
+async def test_autolevel_log_frame_updates_noise_and_fires_hub_update(make_client):
+    """A -Y autolevel adjustment log frame updates both snapshots, once."""
+    hub_updates: list[int] = []
+    seen_events: list[NormalizedEvent] = []
+    client = make_client(
+        on_event=seen_events.append, on_hub_update=lambda: hub_updates.append(1)
+    )
+
+    client._handle_text_frame(
+        '{"time": "2026-05-25 10:00:00", "src": "Auto Level", "lvl": 4, '
+        '"msg": "Estimated noise level is -38.4 dB, '
+        'adjusting minimum detection level to -35.4 dB"}'
+    )
+
+    assert client.noise_level == -38.4
+    assert client.min_level == -35.4
+    assert len(hub_updates) == 1
+    # A log frame is not a device event: nothing is emitted on either surface.
+    assert seen_events == []
+    assert client._queue.empty()
+
+
+async def test_periodic_noise_log_frame_updates_noise_only(make_client):
+    """A -M noise periodic frame updates the noise estimate, not min_level."""
+    client = make_client()
+    client.min_level = -35.4  # from an earlier adjustment message
+
+    client._handle_text_frame(
+        '{"time": "2026-05-25 10:00:10", "src": "Auto Level", "lvl": 4, '
+        '"msg": "Current noise level -38.2 dB, estimated noise -39.1 dB"}'
+    )
+
+    assert client.noise_level == -39.1
+    assert client.min_level == -35.4  # untouched
+
+
+async def test_unchanged_autolevel_value_does_not_refire_hub_update(make_client):
+    """A repeated identical reading fires on_hub_update only the first time."""
+    hub_updates: list[int] = []
+    client = make_client(on_hub_update=lambda: hub_updates.append(1))
+    frame = (
+        '{"src": "Auto Level", "lvl": 4, '
+        '"msg": "Current noise level -38.2 dB, estimated noise -38.4 dB"}'
+    )
+
+    client._handle_text_frame(frame)
+    client._handle_text_frame(frame)
+
+    assert client.noise_level == -38.4
+    assert len(hub_updates) == 1
+
+
+async def test_every_log_frame_reaches_on_log_verbatim(make_client):
+    """on_log receives every log frame raw, whatever its src."""
+    logs: list[dict] = []
+    client = make_client(on_log=logs.append)
+
+    client._handle_text_frame(
+        '{"time": "2026-05-25 10:00:00", "src": "Input", "lvl": 5, '
+        '"msg": "Async read stalled"}'
+    )
+
+    assert logs == [
+        {
+            "time": "2026-05-25 10:00:00",
+            "src": "Input",
+            "lvl": 5,
+            "msg": "Async read stalled",
+        }
+    ]
+    # Non-"Auto Level" sources never touch the noise snapshots.
+    assert client.noise_level is None
+    assert client.min_level is None
+
+
+async def test_unparseable_autolevel_message_updates_nothing(make_client):
+    """An unrecognized "Auto Level" wording is ignored (fail-safe, no hub update)."""
+    hub_updates: list[int] = []
+    client = make_client(on_hub_update=lambda: hub_updates.append(1))
+
+    client._handle_text_frame(
+        '{"src": "Auto Level", "lvl": 4, "msg": "some future wording 1.0 dB"}'
+    )
+    client._handle_text_frame('{"src": "Auto Level", "lvl": 4, "msg": 7}')
+
+    assert client.noise_level is None
+    assert client.min_level is None
+    assert hub_updates == []
+
+
+async def test_min_level_participates_in_change_detection(make_client):
+    """min_level changes drive on_hub_update independently of the noise estimate."""
+    hub_updates: list[int] = []
+    client = make_client(on_hub_update=lambda: hub_updates.append(1))
+
+    # Fresh reading: both snapshots move off None.
+    client._handle_text_frame(
+        '{"src": "Auto Level", "lvl": 4, '
+        '"msg": "Estimated noise level is -38.4 dB, '
+        'adjusting minimum detection level to -35.4 dB"}'
+    )
+    # Same noise estimate, new minimum level: the min_level branch alone must
+    # still register a change and refire.
+    client._handle_text_frame(
+        '{"src": "Auto Level", "lvl": 4, '
+        '"msg": "Estimated noise level is -38.4 dB, '
+        'adjusting minimum detection level to -33.0 dB"}'
+    )
+    # New noise estimate, same minimum level: the noise branch must still fire
+    # even though min_level is unchanged.
+    client._handle_text_frame(
+        '{"src": "Auto Level", "lvl": 4, '
+        '"msg": "Estimated noise level is -40.0 dB, '
+        'adjusting minimum detection level to -33.0 dB"}'
+    )
+
+    assert client.noise_level == -40.0
+    assert client.min_level == -33.0
+    assert len(hub_updates) == 3
+
+
+async def test_non_string_log_frame_still_reaches_on_log(make_client):
+    """A log frame whose msg is not a string is still forwarded to on_log verbatim."""
+    logs: list[dict] = []
+    client = make_client(on_log=logs.append)
+
+    client._handle_text_frame('{"src": "Auto Level", "lvl": 4, "msg": 7}')
+
+    assert logs == [{"src": "Auto Level", "lvl": 4, "msg": 7}]
+    # Non-string msg is unparseable, so the noise snapshots stay untouched.
+    assert client.noise_level is None
+    assert client.min_level is None
+
+
+# --------------------------------------------------------------------------- #
 # Junk frames are dropped                                                      #
 # --------------------------------------------------------------------------- #
 @pytest.mark.parametrize(
