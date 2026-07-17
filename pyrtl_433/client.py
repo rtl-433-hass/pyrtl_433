@@ -42,6 +42,7 @@ from typing import Any
 import aiohttp
 
 from ._urls import build_cmd_url, build_ws_url, unwrap_result
+from .autolevel import AUTO_LEVEL_SRC, parse_auto_level
 from .normalizer import DEFAULT_SKIP_KEYS, NormalizedEvent, normalize
 from .replay import classify_replay, parse_event_time
 
@@ -94,6 +95,11 @@ class Rtl433Client:
         ``stats``: ``dict`` latest server-stats payload (HTTP-sourced).
         ``dev_info``: ``dict`` the SDR's USB device label.
         ``dev_query``: ``str | None`` the ``-d`` selector rtl_433 opened.
+        ``noise_level``: ``float | None`` estimated noise level in dB, parsed
+            from the server's "Auto Level" log frames (socket-sourced; requires
+            ``-Y autolevel`` and/or ``-M noise`` server-side).
+        ``min_level``: ``float | None`` the auto-adjusted minimum detection
+            level in dB (socket-sourced; requires ``-Y autolevel``).
     """
 
     def __init__(
@@ -107,6 +113,7 @@ class Rtl433Client:
         skip_keys: set[str] | frozenset[str] | None = None,
         on_event: Callable[[NormalizedEvent], Any] | None = None,
         on_hub_update: Callable[[], Any] | None = None,
+        on_log: Callable[[dict[str, Any]], Any] | None = None,
         clock: Callable[[], datetime] | None = None,
         event_tz: tzinfo | None = None,
     ) -> None:
@@ -119,7 +126,10 @@ class Rtl433Client:
         rtl_433 ``time`` stamps are interpreted for replay classification; pass
         the consumer's configured zone (e.g. Home Assistant's ``DEFAULT_TIME_ZONE``)
         so it does not depend on the host process time zone. Defaults to ``None``
-        (system local zone).
+        (system local zone). ``on_log`` receives every raw server log frame
+        (``{"time", "src", "lvl", "msg"}``, rtl_433 >= 23.11) for consumers that
+        want to surface the server's own log output; the "Auto Level" noise
+        parsing below happens regardless of whether it is set.
         """
         self.host = host
         self.port = port
@@ -135,6 +145,7 @@ class Rtl433Client:
         # may be sync or return an awaitable (an async callback is scheduled).
         self._on_event = on_event
         self._on_hub_update = on_hub_update
+        self._on_log = on_log
         self._clock: Callable[[], datetime] = (
             clock if clock is not None else (lambda: datetime.now(UTC))
         )
@@ -164,6 +175,10 @@ class Rtl433Client:
         self.stats: dict[str, Any] = {}
         self.dev_info: dict[str, Any] = {}
         self.dev_query: str | None = None
+        # Receiver noise floor, parsed from "Auto Level" log frames on the socket
+        # (the only place rtl_433 surfaces it — there is no structured getter).
+        self.noise_level: float | None = None
+        self.min_level: float | None = None
         # Getters currently returning malformed JSON, so the "invalid data" error
         # is logged once per command until it recovers (never floods on refresh).
         self._malformed_cmds: set[str] = set()
@@ -393,7 +408,7 @@ class Rtl433Client:
         self._classify_frame(event)
 
     def _classify_frame(self, event: dict[str, Any]) -> None:
-        """Route a parsed frame by shape (event vs shutdown vs ignored)."""
+        """Route a parsed frame by shape (event vs shutdown vs log vs ignored)."""
         is_event = event.get("model") is not None or any(
             event.get(key) is not None for key in _EVENT_IDENTITY_KEYS
         )
@@ -401,6 +416,10 @@ class Rtl433Client:
             self._process_event(event)
         elif "shutdown" in event:
             self._handle_shutdown()
+        elif "msg" in event and "lvl" in event:
+            # A server log frame ({"time", "src", "lvl", "msg"}, rtl_433 >= 23.11).
+            # Carries no model/identity keys, so it can never shadow an event.
+            self._handle_log(event)
         # All other non-event frames (meta / state / result / error) are ignored:
         # meta and stats are sourced over HTTP, so nothing else needs handling here.
 
@@ -455,6 +474,35 @@ class Rtl433Client:
             LOGGER.debug("pyrtl_433 server announced shutdown for %s", self.ws_url)
         self.connected = False
         self._invoke_callback(self._on_hub_update)
+
+    def _handle_log(self, event: dict[str, Any]) -> None:
+        """Handle a server log frame: forward it raw, and mine "Auto Level" data.
+
+        Every log frame goes to the optional ``on_log`` callback verbatim. Frames
+        from the pulse detector's auto-level feature (``src == "Auto Level"``)
+        are additionally parsed (:func:`~pyrtl_433.autolevel.parse_auto_level`)
+        into the ``noise_level`` / ``min_level`` snapshots — the only source of
+        the receiver's noise floor rtl_433 offers. ``on_hub_update`` fires only
+        when a parsed value actually changed; an unrecognized message updates
+        nothing (never fails, never stores a misread value).
+        """
+        msg = event.get("msg")
+        if not isinstance(msg, str):
+            return
+        self._invoke_callback(self._on_log, event)
+        if event.get("src") != AUTO_LEVEL_SRC:
+            return
+        reading = parse_auto_level(msg)
+        if reading is None:
+            LOGGER.debug("pyrtl_433 unrecognized Auto Level message: %r", msg)
+            return
+        changed = reading.noise_db != self.noise_level
+        self.noise_level = reading.noise_db
+        if reading.min_level_db is not None:
+            changed = changed or reading.min_level_db != self.min_level
+            self.min_level = reading.min_level_db
+        if changed:
+            self._invoke_callback(self._on_hub_update)
 
     # ------------------------------------------------------------------ #
     # HTTP ``/cmd`` transport (SDR/meta config + server stats)           #
