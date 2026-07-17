@@ -347,6 +347,12 @@ class Rtl433Client:
                 self._ws = None
                 self.connected = False
                 self._connection_time = None
+                # The noise floor is a live measurement with no ``/cmd`` getter
+                # to refresh on reconnect (unlike meta/stats), so clear it on
+                # drop — otherwise the sensors would show a stale reading
+                # indefinitely, e.g. after rtl_433 restarts with auto-level off.
+                self.noise_level = None
+                self.min_level = None
                 self._invoke_callback(self._on_hub_update)
 
             if self._stop_event.is_set():
@@ -487,10 +493,8 @@ class Rtl433Client:
         nothing (never fails, never stores a misread value).
         """
         msg = event.get("msg")
-        if not isinstance(msg, str):
-            return
         self._invoke_callback(self._on_log, event)
-        if event.get("src") != AUTO_LEVEL_SRC:
+        if event.get("src") != AUTO_LEVEL_SRC or not isinstance(msg, str):
             return
         reading = parse_auto_level(msg)
         if reading is None:

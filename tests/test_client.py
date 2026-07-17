@@ -316,6 +316,50 @@ async def test_unparseable_autolevel_message_updates_nothing(make_client):
     assert hub_updates == []
 
 
+async def test_min_level_participates_in_change_detection(make_client):
+    """min_level changes drive on_hub_update independently of the noise estimate."""
+    hub_updates: list[int] = []
+    client = make_client(on_hub_update=lambda: hub_updates.append(1))
+
+    # Fresh reading: both snapshots move off None.
+    client._handle_text_frame(
+        '{"src": "Auto Level", "lvl": 4, '
+        '"msg": "Estimated noise level is -38.4 dB, '
+        'adjusting minimum detection level to -35.4 dB"}'
+    )
+    # Same noise estimate, new minimum level: the min_level branch alone must
+    # still register a change and refire.
+    client._handle_text_frame(
+        '{"src": "Auto Level", "lvl": 4, '
+        '"msg": "Estimated noise level is -38.4 dB, '
+        'adjusting minimum detection level to -33.0 dB"}'
+    )
+    # New noise estimate, same minimum level: the noise branch must still fire
+    # even though min_level is unchanged.
+    client._handle_text_frame(
+        '{"src": "Auto Level", "lvl": 4, '
+        '"msg": "Estimated noise level is -40.0 dB, '
+        'adjusting minimum detection level to -33.0 dB"}'
+    )
+
+    assert client.noise_level == -40.0
+    assert client.min_level == -33.0
+    assert len(hub_updates) == 3
+
+
+async def test_non_string_log_frame_still_reaches_on_log(make_client):
+    """A log frame whose msg is not a string is still forwarded to on_log verbatim."""
+    logs: list[dict] = []
+    client = make_client(on_log=logs.append)
+
+    client._handle_text_frame('{"src": "Auto Level", "lvl": 4, "msg": 7}')
+
+    assert logs == [{"src": "Auto Level", "lvl": 4, "msg": 7}]
+    # Non-string msg is unparseable, so the noise snapshots stay untouched.
+    assert client.noise_level is None
+    assert client.min_level is None
+
+
 # --------------------------------------------------------------------------- #
 # Junk frames are dropped                                                      #
 # --------------------------------------------------------------------------- #
