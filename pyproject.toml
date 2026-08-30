@@ -36,7 +36,7 @@ dev = [
     "pytest-cov>=7",
     "pytest-xdist>=3",
     "mutmut==3.7.0",
-    "ruff==0.16.4",
+    "ruff==0.16.5",
     "mypy>=1.19",
 ]
 
