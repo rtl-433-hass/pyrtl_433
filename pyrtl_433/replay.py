@@ -18,7 +18,9 @@ from __future__ import annotations
 
 import dataclasses
 from datetime import UTC, datetime, timedelta, tzinfo
+import enum
 import logging
+import re
 from typing import Any
 
 LOGGER = logging.getLogger(__name__)
@@ -43,6 +45,42 @@ REPLAY_STALE_THRESHOLD = timedelta(seconds=30)
 # and assumes the server and client clocks are roughly NTP-synced (a frame with
 # no parseable ``time`` is treated as live, preserving "never drop a real one").
 DISCOVERY_BACKLOG_GRACE = timedelta(seconds=5)
+
+
+# A decimal point followed by a digit -- the sub-second marker shared by all
+# three accepted ``time`` families (``10:00:00.5``, ``...T10:00:00.123456Z``,
+# ``1779706800.5``). Matching the raw text, not the parsed value, is what makes
+# this a *format* signal: a ``time:usec`` server still stamps ``.000000`` about
+# one frame in a million, and ``parsed.microsecond == 0`` would misread exactly
+# those frames as second-resolution.
+_SUBSECOND = re.compile(r"\.\d")
+
+
+class TimePrecision(enum.StrEnum):
+    """Resolution of a server's event ``time`` stamps, observed on the wire.
+
+    rtl_433 chooses the stamp format via ``report_meta time:...``, and the
+    choice is not merely cosmetic -- it bounds how well a client can tell two
+    transmissions apart:
+
+    * :attr:`MICROSECOND` -- a sub-second component is present
+      (``report_meta time:...usec...``). Two frames from one device are always
+      distinguishable.
+    * :attr:`SECOND` -- parseable but whole-second only (the rtl_433 default).
+      Two transmissions from the same device inside one wall-clock second carry
+      identical stamps, so they cannot be told apart by time alone.
+    * :attr:`UNUSABLE` -- no parseable timestamp at all (``time:off``, a missing
+      key, or a form this parser does not accept). Every frame then takes the
+      ``LIVE (no-timestamp)`` short-circuit in :func:`classify_replay`, which
+      disables replay suppression entirely.
+
+    Exposed so a consumer can surface the server-side remedy (adding
+    ``report_meta time:iso:usec:tz``); this library never acts on it itself.
+    """
+
+    MICROSECOND = "microsecond"
+    SECOND = "second"
+    UNUSABLE = "unusable"
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -223,3 +261,22 @@ def parse_event_time(raw: Any, *, default_tz: tzinfo | None = None) -> datetime 
         return parsed.astimezone(UTC)
     except OSError, OverflowError, ValueError:
         return None
+
+
+def time_precision(raw: Any) -> TimePrecision:
+    """Classify the resolution of one frame's raw ``time`` value.
+
+    Takes no ``default_tz``: which zone an offset-less stamp is interpreted in
+    moves the resulting *instant*, never whether the value parses at all, so it
+    cannot change this verdict. Whatever :func:`parse_event_time` accepts for the
+    replay classification, this accepts too.
+
+    The answer describes the *server's configured format*, which is uniform
+    across frames, so a single frame is enough to classify a connection -- and a
+    later change means the operator actually reconfigured rtl_433.
+    """
+    if not isinstance(raw, str) or parse_event_time(raw) is None:
+        return TimePrecision.UNUSABLE
+    if _SUBSECOND.search(raw):
+        return TimePrecision.MICROSECOND
+    return TimePrecision.SECOND

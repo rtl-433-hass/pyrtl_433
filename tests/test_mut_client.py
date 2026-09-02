@@ -707,6 +707,7 @@ async def test_initial_state(make_client):
     assert client.dev_info == {}
     assert client.dev_query is None
     assert client._event_high_water == {}
+    assert client.time_precision is None
     assert client._connection_time is None
     assert client._malformed_cmds == set()
 

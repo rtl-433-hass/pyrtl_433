@@ -14,8 +14,10 @@ from pyrtl_433.replay import (
     DISCOVERY_BACKLOG_GRACE,
     REPLAY_STALE_THRESHOLD,
     ReplayVerdict,
+    TimePrecision,
     classify_replay,
     parse_event_time,
+    time_precision,
 )
 
 
@@ -163,6 +165,45 @@ def test_parse_rejects_junk_and_non_strings():
     # reducing it to 1970 would classify every frame STALE-GAP and suppress
     # live traffic, so it is rejected as unparsable instead.
     assert parse_event_time("12345") is None
+
+
+# --------------------------------------------------------------------------- #
+# time_precision: what the server's stamp format allows a client to tell apart. #
+# --------------------------------------------------------------------------- #
+def test_time_precision_reads_the_stamp_format():
+    """Each accepted family is classified by whether it carries a sub-second part."""
+    # rtl_433's default: parseable, whole seconds only.
+    assert time_precision("2026-05-25 10:00:00") == TimePrecision.SECOND
+    assert time_precision("2026-05-25T10:00:00Z") == TimePrecision.SECOND
+    assert time_precision("1779706800") == TimePrecision.SECOND
+    # ``report_meta time:...usec...`` in each base format.
+    assert time_precision("2026-05-25 10:00:00.5") == TimePrecision.MICROSECOND
+    assert (
+        time_precision("2026-05-25T10:00:00.123456-04:00") == TimePrecision.MICROSECOND
+    )
+    assert time_precision("1779706800.5") == TimePrecision.MICROSECOND
+
+
+def test_time_precision_unusable_when_nothing_parses():
+    """``time:off`` / a missing key / an unreadable form -> UNUSABLE.
+
+    This is the state in which ``classify_replay`` short-circuits every frame to
+    ``LIVE (no-timestamp)``, so replay suppression is off entirely.
+    """
+    assert time_precision(None) == TimePrecision.UNUSABLE
+    assert time_precision("") == TimePrecision.UNUSABLE
+    assert time_precision("not a timestamp") == TimePrecision.UNUSABLE
+    assert time_precision(12345) == TimePrecision.UNUSABLE  # non-string
+
+
+def test_time_precision_reads_the_format_not_the_value():
+    """A ``.000000`` stamp is still a microsecond-precision server.
+
+    A ``time:usec`` server stamps a whole-second instant roughly one frame in a
+    million; reading ``parsed.microsecond`` instead of the raw text would
+    misreport exactly those frames and make the signal flap.
+    """
+    assert time_precision("2026-05-25T10:00:00.000000Z") == TimePrecision.MICROSECOND
 
 
 # --------------------------------------------------------------------------- #

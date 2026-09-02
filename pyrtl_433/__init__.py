@@ -17,7 +17,7 @@ from .client import CannotConnect, Rtl433Client
 from .library import FieldDescriptor, Registry, apply_transform, load_library, lookup
 from .naming import display_name, identity_suffix, safe_token
 from .normalizer import NormalizedEvent, device_key, normalize
-from .replay import ReplayVerdict, classify_replay
+from .replay import ReplayVerdict, TimePrecision, classify_replay, time_precision
 
 __all__ = [
     "AUTO_LEVEL_SRC",
@@ -28,6 +28,7 @@ __all__ = [
     "Registry",
     "ReplayVerdict",
     "Rtl433Client",
+    "TimePrecision",
     "apply_transform",
     "classify_replay",
     "device_key",
@@ -39,5 +40,6 @@ __all__ = [
     "lookup",
     "normalize",
     "parse_auto_level",
+    "time_precision",
     "safe_token",
 ]
