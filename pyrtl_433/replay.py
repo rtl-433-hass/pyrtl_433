@@ -123,6 +123,44 @@ def classify_replay(
     )
 
 
+# Plausibility window for a bare epoch-seconds ``time`` value
+# (``report_meta time:unix``). Unlike every other accepted form, a run of digits
+# carries no structural marker that says "this is a timestamp", so an
+# out-of-range value is far more likely a glitch than a real instant. Rejecting
+# it is also the safer failure: a near-zero value would reduce to 1970, which is
+# older than :data:`REPLAY_STALE_THRESHOLD` and would classify every frame
+# STALE-GAP -- silently suppressing live traffic -- whereas ``None`` leaves the
+# frame live, preserving "never drop a real one".
+_EPOCH_MIN = datetime(2000, 1, 1, tzinfo=UTC)
+_EPOCH_MAX = datetime(2100, 1, 1, tzinfo=UTC)
+
+
+def _parse_epoch(text: str) -> datetime | None:
+    """Parse an epoch-seconds ``time`` string to UTC, or ``None`` if implausible.
+
+    Covers ``report_meta time:unix`` (integer seconds, e.g. ``"1779706800"``) and
+    ``time:unix:usec`` (fractional, e.g. ``"1779706800.123456"``). rtl_433 emits
+    ``time`` as a JSON string in every mode, so only the string form is accepted.
+    An epoch is an absolute instant, so ``default_tz`` never applies to it.
+
+    Values outside :data:`_EPOCH_MIN`..:data:`_EPOCH_MAX`, non-numeric text, and
+    the ``float`` specials (``nan`` / ``inf``, which :func:`float` accepts) all
+    yield ``None``.
+    """
+    try:
+        value = float(text)
+    except ValueError:
+        return None
+    try:
+        parsed = datetime.fromtimestamp(value, UTC)
+    except OSError, OverflowError, ValueError:
+        # Outside the platform's representable range, or a nan/inf special.
+        return None
+    if not _EPOCH_MIN <= parsed < _EPOCH_MAX:
+        return None
+    return parsed
+
+
 def _parse_local_naive(text: str) -> datetime | None:
     """Parse the explicit rtl_433 local ``time`` formats, or ``None`` if none match."""
     for fmt in ("%Y-%m-%d %H:%M:%S.%f", "%Y-%m-%d %H:%M:%S"):
@@ -136,10 +174,14 @@ def _parse_local_naive(text: str) -> datetime | None:
 def parse_event_time(raw: Any, *, default_tz: tzinfo | None = None) -> datetime | None:
     """Parse an rtl_433 ``time`` value to a comparable UTC instant, or ``None``.
 
-    rtl_433 stamps ``time`` either as a local ``"YYYY-MM-DD HH:MM:SS"`` string
-    (optionally with fractional seconds) or as ISO-8601 with an offset / ``Z``,
-    depending on server config. This reduces both to a single UTC basis so the
-    replay classification can compare them. A local-naive value is interpreted in
+    rtl_433 stamps ``time`` as a local ``"YYYY-MM-DD HH:MM:SS"`` string
+    (optionally with fractional seconds), as ISO-8601 with an offset / ``Z``, or
+    as bare epoch seconds (``report_meta time:unix``, optionally fractional),
+    depending on server config. This reduces all three to a single UTC basis so
+    the replay classification can compare them. An unhandled form would leave
+    every frame with no usable timestamp, which disables replay suppression
+    entirely -- the whole backlog re-fires on reconnect -- so the epoch form is
+    parsed rather than rejected. A local-naive value is interpreted in
     ``default_tz`` when one is supplied (e.g. the consumer's configured time zone,
     such as Home Assistant's), otherwise in the system local time zone (the
     NTP-sync assumption documented on :data:`REPLAY_STALE_THRESHOLD`); an
@@ -161,10 +203,10 @@ def parse_event_time(raw: Any, *, default_tz: tzinfo | None = None) -> datetime 
         parsed = datetime.fromisoformat(text)
     except TypeError, ValueError:
         # A form ``fromisoformat`` rejects: fall back to the explicit rtl_433
-        # local formats before giving up.
+        # local formats, then to bare epoch seconds, before giving up.
         parsed = _parse_local_naive(text)
-    if parsed is None:
-        return None
+        if parsed is None:
+            return _parse_epoch(text)
     try:
         if parsed.tzinfo is None:
             if default_tz is not None:

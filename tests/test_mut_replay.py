@@ -288,6 +288,68 @@ class TestParseEventTime:
 
 
 # --------------------------------------------------------------------------- #
+# _parse_epoch: exact instants and both plausibility bounds.                   #
+# --------------------------------------------------------------------------- #
+class TestParseEpoch:
+    """Pin the epoch form's exact instants, both window bounds, and the guard."""
+
+    def test_integer_epoch_exact_utc(self):
+        """Integer epoch seconds reduce to the exact UTC instant."""
+        assert parse_event_time("1779706800") == _utc(11, 0, 0)
+
+    def test_fractional_epoch_preserves_microseconds(self):
+        """``time:unix:usec`` keeps its sub-second component.
+
+        Kills a mutant that truncates the value to whole seconds (``int`` for
+        ``float``): .125 is exactly representable, so the comparison is stable.
+        """
+        assert parse_event_time("1779706800.125") == _utc(11, 0, 0, 125000)
+
+    def test_lower_bound_is_inclusive(self):
+        """The window's first instant is accepted (pins ``<=`` against ``<``)."""
+        assert parse_event_time("946684800") == datetime(2000, 1, 1, tzinfo=UTC)
+
+    def test_one_second_below_lower_bound_is_rejected(self):
+        """One second under the window is rejected (pins the bound's value)."""
+        assert parse_event_time("946684799") is None
+
+    def test_upper_bound_is_exclusive(self):
+        """The window's end instant is rejected (pins ``<`` against ``<=``)."""
+        assert parse_event_time("4102444800") is None
+
+    def test_one_second_below_upper_bound_is_accepted(self):
+        """One second under the upper bound is still accepted."""
+        assert parse_event_time("4102444799") == datetime(
+            2099, 12, 31, 23, 59, 59, tzinfo=UTC
+        )
+
+    def test_default_tz_does_not_shift_an_epoch(self):
+        """An epoch is absolute; ``default_tz`` applies only to naive wall-clocks.
+
+        Kills a mutant that routes the epoch result through the naive-attach
+        branch, which would shift it by the zone's offset.
+        """
+        ny = ZoneInfo("America/New_York")
+        assert parse_event_time("1779706800", default_tz=ny) == _utc(11, 0, 0)
+
+    @pytest.mark.parametrize("raw", ["nan", "inf", "-inf", "1e400", "-1e400"])
+    def test_float_specials_are_rejected(self, raw):
+        """``float()`` accepts these, so only the guard stops them.
+
+        Pins the ``OSError, OverflowError, ValueError`` catch around
+        ``fromtimestamp``: without it these propagate out of the frame loop.
+        """
+        assert parse_event_time(raw) is None
+
+    def test_non_numeric_text_is_rejected(self):
+        """Text that is neither a datetime form nor a number -> None.
+
+        Pins the ``ValueError`` catch around ``float()``.
+        """
+        assert parse_event_time("not-a-number") is None
+
+
+# --------------------------------------------------------------------------- #
 # Documented EQUIVALENT mutant on parse_event_time (not forced).               #
 # --------------------------------------------------------------------------- #
 # One surviving mutant is genuinely equivalent: ``if parsed.tzinfo is None:`` ->

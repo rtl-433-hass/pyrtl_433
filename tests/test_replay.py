@@ -137,6 +137,21 @@ def test_parse_iso_z_and_offset_reduce_to_utc():
     assert parse_event_time("2026-05-25T12:00:00+02:00") == _utc(10, 0, 0)
 
 
+def test_parse_epoch_seconds_reduces_to_utc():
+    """``report_meta time:unix`` stamps ``time`` as bare epoch seconds.
+
+    rtl_433 emits this form as a JSON string like every other mode. Left
+    unparsed it yields ``None`` for *every* frame, routing all traffic through
+    the "no usable timestamp" branch -- which disables replay suppression
+    entirely, so the server's whole backlog re-fires on each reconnect.
+    """
+    assert parse_event_time("1779706800") == _utc(11, 0, 0)
+    # ``time:unix:usec`` adds a fractional part.
+    assert parse_event_time("1779706800.5") == _utc(11, 0, 0) + timedelta(
+        microseconds=500000
+    )
+
+
 def test_parse_rejects_junk_and_non_strings():
     """Missing / blank / garbage / non-string values -> None, never raising."""
     assert parse_event_time(None) is None
@@ -144,6 +159,10 @@ def test_parse_rejects_junk_and_non_strings():
     assert parse_event_time("   ") is None
     assert parse_event_time("not a timestamp") is None
     assert parse_event_time(12345) is None  # non-string
+    # A number outside the plausibility window is not believed as an epoch:
+    # reducing it to 1970 would classify every frame STALE-GAP and suppress
+    # live traffic, so it is rejected as unparsable instead.
+    assert parse_event_time("12345") is None
 
 
 # --------------------------------------------------------------------------- #
