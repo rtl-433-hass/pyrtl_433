@@ -584,7 +584,14 @@
   above its ratchet baseline.</li>
 </ul>
 <p>The library holds a per-module mutation-score <strong>floor</strong> (killed / total mutants),
-enforced by the ratchet.</p>
+enforced by the ratchet. The gate itself is
+<a href="https://github.com/rtl-433-hass/mutmut-ratchet"><code>mutmut-ratchet</code></a>, a shared
+package: it scopes a PR's mutation run to the modules the diff could affect,
+fans the work across time-balanced shards, and fails only on a real per-file
+regression against the committed <code>scripts/mutation_baseline.json</code>. Its per-repo
+settings — the package path, the escalation triggers, and the test -&gt; source
+overrides for tests whose name does not map 1:1 to a module — live in
+<code>[tool.mutmut_ratchet]</code> in <code>pyproject.toml</code>.</p>
 <h2 id="local-commands">Local commands<a class="headerlink" href="#local-commands" title="Permanent link">&para;</a></h2>
 <p>uv-first — there are no <code>requirements*.txt</code> files; dev/test tooling lives in
 <code>pyproject.toml</code>'s <code>[dependency-groups]</code> and is locked in <code>uv.lock</code>:</p>
@@ -595,8 +602,14 @@ uv<span class="w"> </span>run<span class="w"> </span>pytest<span class="w"> </sp
 uv<span class="w"> </span>run<span class="w"> </span>ruff<span class="w"> </span>check<span class="w"> </span>.<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>uv<span class="w"> </span>run<span class="w"> </span>ruff<span class="w"> </span>format<span class="w"> </span>--check<span class="w"> </span>.<span class="w">     </span><span class="c1"># lint + format</span>
 uv<span class="w"> </span>run<span class="w"> </span>mypy<span class="w"> </span>pyrtl_433/<span class="w">                                  </span><span class="c1"># strict type check</span>
 uv<span class="w"> </span>run<span class="w"> </span>mutmut<span class="w"> </span>run<span class="w">                                       </span><span class="c1"># mutation testing</span>
-uv<span class="w"> </span>run<span class="w"> </span>python<span class="w"> </span>scripts/mutation_stats.py<span class="w"> </span>&gt;<span class="w"> </span>stats.json<span class="w">    </span><span class="c1"># collect per-module stats</span>
-uv<span class="w"> </span>run<span class="w"> </span>python<span class="w"> </span>scripts/mutation_ratchet.py<span class="w"> </span>--mode<span class="w"> </span>floor<span class="w"> </span>--stats<span class="w"> </span>stats.json<span class="w">  </span><span class="c1"># enforce the floor</span>
+uv<span class="w"> </span>run<span class="w"> </span>mutmut-ratchet<span class="w"> </span>stats<span class="w"> </span>&gt;<span class="w"> </span>stats.json<span class="w">                </span><span class="c1"># collect per-module stats</span>
+uv<span class="w"> </span>run<span class="w"> </span>mutmut-ratchet<span class="w"> </span>ratchet<span class="w"> </span>--mode<span class="w"> </span>floor<span class="w"> </span>--stats<span class="w"> </span>stats.json<span class="w">   </span><span class="c1"># enforce the floor</span>
+uv<span class="w"> </span>run<span class="w"> </span>mutmut-ratchet<span class="w"> </span>ratchet<span class="w"> </span>--mode<span class="w"> </span>strict<span class="w"> </span>--stats<span class="w"> </span>stats.json<span class="w">  </span><span class="c1"># check the baseline is current</span>
+</code></pre></div>
+<p>After a <em>full</em> <code>mutmut run</code>, <code>--update</code> ratchets the committed baseline upward
+and <code>mutmut-ratchet timings</code> refreshes the shard weights:</p>
+<div class="highlight"><pre><span></span><code>uv<span class="w"> </span>run<span class="w"> </span>mutmut-ratchet<span class="w"> </span>ratchet<span class="w"> </span>--mode<span class="w"> </span>floor<span class="w"> </span>--stats<span class="w"> </span>stats.json<span class="w"> </span>--update
+uv<span class="w"> </span>run<span class="w"> </span>mutmut-ratchet<span class="w"> </span>timings
 </code></pre></div>
 <h2 id="continuous-integration">Continuous integration<a class="headerlink" href="#continuous-integration" title="Permanent link">&para;</a></h2>
 <p>CI runs the same gates (lint, format, strict mypy, tests with a 95% coverage
