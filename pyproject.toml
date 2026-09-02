@@ -18,7 +18,7 @@ classifiers = [
     "Programming Language :: Python :: 3.14",
     "Topic :: Home Automation",
 ]
-dependencies = ["aiohttp"]
+dependencies = ["aiohttp", "pyyaml"]
 
 [project.urls]
 Homepage = "https://github.com/rtl-433-hass/pyrtl_433"
@@ -38,10 +38,16 @@ dev = [
     "mutmut==3.7.0",
     "ruff==0.16.5",
     "mypy>=1.19",
+    "types-PyYAML>=6",
 ]
 
 [tool.setuptools]
-packages = ["pyrtl_433"]
+packages = ["pyrtl_433", "pyrtl_433.library"]
+
+# The device library ships its YAML data (and the typing marker) inside the
+# wheel/sdist; without this the loader finds an empty ``library/data``.
+[tool.setuptools.package-data]
+pyrtl_433 = ["library/data/*.yaml", "py.typed"]
 
 [tool.mypy]
 strict = true

@@ -11,3 +11,6 @@ The following modules of that integration were the source of this library's code
   - custom_components/rtl_433/normalizer.py
   - custom_components/rtl_433/coordinator/_events.py
   - custom_components/rtl_433/sdr_settings.py
+  - custom_components/rtl_433/mapping/ (the device-library loader/query layer)
+  - custom_components/rtl_433/device_library/*.yaml (the shipped field mappings)
+  - custom_components/rtl_433/coordinator/_watchdog.py (event-driven classification)

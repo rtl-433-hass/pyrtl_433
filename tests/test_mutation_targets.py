@@ -52,6 +52,9 @@ mt = _load_targets_module()
 _NO_SINGLE_MODULE = {
     "tests/test_mutation_targets.py",  # meta: tests this very script
     "tests/test_mutation_shards.py",  # meta: tests scripts/mutation_shards.py
+    # Broad: sweeps every JSON fixture through the normalizer and the whole
+    # device library, so a change to it is correctly a full run.
+    "tests/test_fixture_coverage.py",
 }
 
 
@@ -105,6 +108,23 @@ def test_explicit_map_entry_scopes_to_its_modules(test_file, modules):
     full, sources = mt.resolve([test_file])
     assert full is False, f"{test_file} should scope, not trigger a full run"
     assert sources == {f"{_PKG}/{module}" for module in modules}
+
+
+@pytest.mark.parametrize(
+    "path, expected",
+    [
+        (f"{_PKG}/normalizer.py", f"{_PKG}.normalizer.*"),
+        (f"{_PKG}/library/_loader.py", f"{_PKG}.library._loader.*"),
+        # A package ``__init__.py`` *is* the package as far as mutmut mutant
+        # names go, so it must widen to the package, never to a
+        # ``....__init__.*`` pattern that matches no mutant and silently runs
+        # zero of them.
+        (f"{_PKG}/library/__init__.py", f"{_PKG}.library.*"),
+        (f"{_PKG}/__init__.py", f"{_PKG}.*"),
+    ],
+)
+def test_pattern_for_maps_a_source_path_to_a_mutmut_filter(path, expected):
+    assert mt.pattern_for(path) == expected
 
 
 def test_explicit_map_targets_exist_when_test_is_present():

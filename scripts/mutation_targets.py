@@ -56,6 +56,15 @@ FULL_RUN_TRIGGERS = {
     "scripts/mutation_targets.py",
 }
 
+# Every module of the ``library`` subpackage, shared by its three test files.
+_LIBRARY_MODULES = [
+    "library/__init__.py",
+    "library/_loader.py",
+    "library/_model.py",
+    "library/_overrides.py",
+    "library/_transform.py",
+]
+
 # Tests whose filename does not map 1:1 to a source module via the naming
 # convention below, declared with the modules they actually exercise so a PR
 # touching them scopes instead of escalating to a full run. Values are module
@@ -71,6 +80,13 @@ EXPLICIT_TEST_SOURCES: dict[str, list[str]] = {
     # Mutation-floor test files: their ``_floor`` suffix does not auto-resolve to
     # a source module via the naming convention, so each is mapped explicitly.
     "tests/test_mut_client_floor.py": ["client.py"],
+    # ``library`` is a package, not a module, so ``test_library`` resolves to a
+    # non-existent ``library.py``. Its three test files each exercise the whole
+    # subpackage (the facade re-exports every private helper they import), so all
+    # three map to every module in it.
+    "tests/test_library.py": _LIBRARY_MODULES,
+    "tests/test_mut_library.py": _LIBRARY_MODULES,
+    "tests/test_mut_library_floor.py": _LIBRARY_MODULES,
 }
 
 
@@ -94,6 +110,22 @@ def source_for_test(stem: str) -> str | None:
         if Path(path).is_file():
             return path
     return None
+
+
+def pattern_for(path: str) -> str:
+    """Return the ``mutmut run`` filter pattern that selects one source path.
+
+    mutmut names a mutant after the module that defines it, and a package's
+    ``__init__.py`` *is* the package (``pyrtl_433/library/__init__.py`` produces
+    ``pyrtl_433.library.x_lookup__mutmut_1``, not
+    ``pyrtl_433.library.__init__....``). Naively appending ``.__init__.*`` would
+    therefore match no mutant at all and silently run zero of them, so a package
+    ``__init__`` widens to the whole package instead — a superset, which is safe:
+    the stats step is restricted to the in-scope paths regardless.
+    """
+    dotted = path[len(PKG) + 1 : -3].replace("/", ".")
+    dotted = dotted.removesuffix("__init__").rstrip(".")
+    return f"{PKG_DOTTED}.{dotted}.*" if dotted else f"{PKG_DOTTED}.*"
 
 
 def resolve(changed: list[str]) -> tuple[bool, set[str]]:
@@ -130,9 +162,7 @@ def main(argv: list[str]) -> int:
         print("")
         return 0
     paths = sorted(sources)
-    patterns = [
-        f"{PKG_DOTTED}.{p[len(PKG) + 1 : -3].replace('/', '.')}.*" for p in paths
-    ]
+    patterns = [pattern_for(p) for p in paths]
     print("scoped")
     print(" ".join(patterns))
     print(" ".join(paths))

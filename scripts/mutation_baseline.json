@@ -5,10 +5,40 @@
       "score": 1.0,
       "total": 22
     },
+    "pyrtl_433/availability.py": {
+      "killed": 10,
+      "score": 1.0,
+      "total": 10
+    },
     "pyrtl_433/client.py": {
       "killed": 453,
       "score": 0.986928,
       "total": 459
+    },
+    "pyrtl_433/library/__init__.py": {
+      "killed": 27,
+      "score": 1.0,
+      "total": 27
+    },
+    "pyrtl_433/library/_loader.py": {
+      "killed": 309,
+      "score": 0.903509,
+      "total": 342
+    },
+    "pyrtl_433/library/_model.py": {
+      "killed": 18,
+      "score": 0.818182,
+      "total": 22
+    },
+    "pyrtl_433/library/_overrides.py": {
+      "killed": 83,
+      "score": 0.988095,
+      "total": 84
+    },
+    "pyrtl_433/library/_transform.py": {
+      "killed": 167,
+      "score": 0.954286,
+      "total": 175
     },
     "pyrtl_433/normalizer.py": {
       "killed": 74,

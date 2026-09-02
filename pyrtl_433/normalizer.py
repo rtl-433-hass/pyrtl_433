@@ -9,11 +9,11 @@ set of measurement fields. Normalization derives a *deterministic, stable*
 device key from the identity keys and separates measurement fields from
 identity/skip fields.
 
-This module is deliberately decoupled from the mapping library and the
-config flow: it imports nothing from the rest of the integration except
-the constants it shares, and ``normalize`` takes the ``skip_keys`` set as a
-parameter so the caller (the coordinator, wired in ``__init__.py``) injects the loaded
-skip-keys rather than this module importing the loader.
+This module is deliberately decoupled from the device library: it imports
+nothing from it, and ``normalize`` takes the ``skip_keys`` set as a parameter so
+the caller injects the loaded skip-keys (from
+:func:`pyrtl_433.library.load_library`) rather than this module importing the
+loader.
 """
 
 from __future__ import annotations
@@ -30,8 +30,10 @@ IDENTITY_KEYS: Final[tuple[str, ...]] = ("model", "id", "channel", "subtype")
 _IDENTITY_KEYS_SET: Final[frozenset[str]] = frozenset(IDENTITY_KEYS)
 
 # Minimal default skip-set used when the caller injects nothing. The real
-# skip-keys come from the mapping library at runtime; this fallback
-# keeps the normalizer usable standalone (e.g. in tests) without that loader.
+# skip-keys come from the device library at runtime (``_skip_keys.yaml``, loaded
+# by :func:`pyrtl_433.library.load_library`); this fallback keeps the normalizer
+# usable standalone (e.g. in tests) without that loader. Its value is part of
+# the frozen contract and deliberately does not track the library file.
 DEFAULT_SKIP_KEYS: Final[frozenset[str]] = frozenset(
     {"model", "id", "channel", "subtype", "time"}
 )

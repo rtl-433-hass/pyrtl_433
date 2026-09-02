@@ -5,13 +5,17 @@ WebSocket + `/cmd` API.
 
 `pyrtl_433` speaks the *transport/protocol* half of an rtl_433 receiver: it
 connects to one server over a WebSocket, parses the JSON event stream, and drives
-the HTTP `/cmd` endpoint that reports and controls the SDR configuration.
+the HTTP `/cmd` endpoint that reports and controls the SDR configuration. It also
+ships the **device library** — the YAML field mappings that say what each rtl_433
+field means (`pyrtl_433.library`) — plus the pure event-driven classifier an
+availability policy needs (`pyrtl_433.availability`).
 
-Deliberate non-scope: this is a client, not a policy engine. It does **not**
-include the Home Assistant integration's entity model, desired-state store, SDR
-adoption/enforcement, or availability watchdog. It emits normalized,
-replay-classified events and gives you the `/cmd` setter primitive plus the SDR
-value transforms — you build any higher-level policy on top.
+Deliberate non-scope: this is a client and a data library, not a policy engine.
+It does **not** include the Home Assistant integration's entity model,
+desired-state store, SDR adoption/enforcement, or availability watchdog. It emits
+normalized, replay-classified events, resolves each field to a descriptor and a
+transformed value, and gives you the `/cmd` setter primitive plus the SDR value
+transforms — you build any higher-level policy on top.
 
 **Full documentation:** <https://rtl-433-hass.github.io/pyrtl_433/latest/>
 
@@ -66,12 +70,13 @@ for the callback style, the full constructor signature, and SDR `/cmd` writes.
 - [Full documentation](https://rtl-433-hass.github.io/pyrtl_433/latest/)
 - [Quick Start](https://rtl-433-hass.github.io/pyrtl_433/latest/quickstart/)
 - [API Reference](https://rtl-433-hass.github.io/pyrtl_433/latest/api-reference/)
+- [Device Library](https://rtl-433-hass.github.io/pyrtl_433/latest/device-library/)
 - [Protocol Reference](https://rtl-433-hass.github.io/pyrtl_433/latest/protocol-reference/)
 - [Development](https://rtl-433-hass.github.io/pyrtl_433/latest/development/)
 - [Issue tracker](https://github.com/rtl-433-hass/pyrtl_433/issues)
 
 ## License
 
-Apache-2.0. This library was extracted from the transport/protocol code of the
-rtl-433-hass/rtl_433 Home Assistant integration. See [`LICENSE`](LICENSE) and
+Apache-2.0. This library was extracted from the transport/protocol code and the
+device-mapping library of the rtl-433-hass/rtl_433 Home Assistant integration. See [`LICENSE`](LICENSE) and
 [`NOTICE`](NOTICE) for the source modules and attribution.
