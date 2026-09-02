@@ -17,15 +17,15 @@ value transforms — you build any higher-level policy on top.
 
 ## Install
 
-This project is [uv](https://docs.astral.sh/uv/)-first. Not yet published to
-PyPI; once it is:
+This project is [uv](https://docs.astral.sh/uv/)-first and is published on
+[PyPI](https://pypi.org/project/pyrtl_433/):
 
 ```sh
 uv add pyrtl_433
 ```
 
-From a clone of this repository: `uv pip install .`. See the
-[installation guide](https://rtl-433-hass.github.io/pyrtl_433/latest/installation/)
+From a clone of this repository: `uv pip install .`. See
+[Getting Started](https://rtl-433-hass.github.io/pyrtl_433/latest/quickstart/)
 for pip and other options.
 
 ## Quick start

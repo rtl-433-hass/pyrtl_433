@@ -20,7 +20,7 @@ uv pip install .
 Using pip instead of uv:
 
 ```sh
-pip install pyrtl_433   # once published
+pip install pyrtl_433   # from PyPI
 pip install .           # from a clone
 ```
 
