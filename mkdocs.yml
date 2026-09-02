@@ -38,5 +38,6 @@ nav:
   - Home: index.md
   - Getting Started: quickstart.md
   - API Reference: api-reference.md
+  - Device Library: device-library.md
   - Protocol Reference: protocol-reference.md
   - Development: development.md

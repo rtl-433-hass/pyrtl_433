@@ -4,10 +4,13 @@ __pycache__/
 *.pyc
 .venv/
 *.egg-info/
+build/
+dist/
 .pytest_cache/
 .ruff_cache/
 .coverage
 stats.json
+mutation-stats.json
 
 # MkDocs / mike build artifacts
 site/

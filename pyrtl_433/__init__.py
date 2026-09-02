@@ -2,12 +2,19 @@
 
 The framework-agnostic protocol helpers extracted from the rtl-433-hass Home
 Assistant integration (Apache-2.0). Nothing here imports Home Assistant.
+
+The most commonly used names from the :mod:`pyrtl_433.library` device-mapping
+subpackage are re-exported here; the rest of its surface (``merge_overrides``,
+``validate_user_mappings``, ``event_driven_field_keys``, ...) is imported from
+that subpackage directly.
 """
 
 from __future__ import annotations
 
 from .autolevel import AUTO_LEVEL_SRC, AutoLevelReading, parse_auto_level
+from .availability import is_event_driven, known_field_keys
 from .client import CannotConnect, Rtl433Client
+from .library import FieldDescriptor, Registry, apply_transform, load_library, lookup
 from .normalizer import NormalizedEvent, device_key, normalize
 from .replay import ReplayVerdict, classify_replay
 
@@ -15,11 +22,18 @@ __all__ = [
     "AUTO_LEVEL_SRC",
     "AutoLevelReading",
     "CannotConnect",
+    "FieldDescriptor",
     "NormalizedEvent",
+    "Registry",
     "ReplayVerdict",
     "Rtl433Client",
+    "apply_transform",
     "classify_replay",
     "device_key",
+    "is_event_driven",
+    "known_field_keys",
+    "load_library",
+    "lookup",
     "normalize",
     "parse_auto_level",
 ]
