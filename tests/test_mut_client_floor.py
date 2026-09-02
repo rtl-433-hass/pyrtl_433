@@ -129,6 +129,11 @@ def _event(time_str):
     return {"time": time_str, "model": "Foo", "id": 1, "temperature_C": 1.0}
 
 
+# The ``device_key`` every ``_event`` frame normalizes to; the replay high-water
+# mark is tracked per device, so the assertions below index it by this key.
+_EVENT_KEY = "Foo-1"
+
+
 async def test_process_event_live_advances_high_water(make_client, fake_clock):
     """A fresh live frame is emitted (is_replay=False) and advances the mark to it."""
     now = datetime(2026, 5, 25, 10, 0, 0, tzinfo=UTC)
@@ -140,7 +145,7 @@ async def test_process_event_live_advances_high_water(make_client, fake_clock):
 
     assert seen[0].is_replay is False
     assert seen[0].event_time == now
-    assert client._event_high_water == now
+    assert client._event_high_water[_EVENT_KEY] == now
     # It also reached the async-iterator queue.
     assert client._queue.get_nowait() is seen[0]
 
@@ -151,12 +156,12 @@ async def test_process_event_replay_leaves_high_water(make_client, fake_clock):
     hw = datetime(2026, 5, 25, 10, 0, 0, tzinfo=UTC)
     seen = []
     client = make_client(on_event=seen.append)
-    client._event_high_water = hw
+    client._event_high_water = {_EVENT_KEY: hw}
 
     client._process_event(_event("2026-05-25T10:00:00Z"))  # == high water
 
     assert seen[0].is_replay is True
-    assert client._event_high_water == hw  # unchanged
+    assert client._event_high_water[_EVENT_KEY] == hw  # unchanged
 
 
 async def test_process_event_stale_gap_advances_high_water(make_client, fake_clock):
@@ -168,7 +173,9 @@ async def test_process_event_stale_gap_advances_high_water(make_client, fake_clo
     client._process_event(_event("2026-05-25T10:00:00Z"))
 
     assert seen[0].is_replay is True
-    assert client._event_high_water == datetime(2026, 5, 25, 10, 0, 0, tzinfo=UTC)
+    assert client._event_high_water[_EVENT_KEY] == datetime(
+        2026, 5, 25, 10, 0, 0, tzinfo=UTC
+    )
 
 
 async def test_process_event_backlog_is_replay(make_client, fake_clock):
@@ -182,7 +189,9 @@ async def test_process_event_backlog_is_replay(make_client, fake_clock):
     client._process_event(_event("2026-05-25T10:00:00Z"))
 
     assert seen[0].is_replay is True
-    assert client._event_high_water == datetime(2026, 5, 25, 10, 0, 0, tzinfo=UTC)
+    assert client._event_high_water[_EVENT_KEY] == datetime(
+        2026, 5, 25, 10, 0, 0, tzinfo=UTC
+    )
 
 
 async def test_process_event_future_stamp_clamped_to_now(make_client, fake_clock):
@@ -195,7 +204,7 @@ async def test_process_event_future_stamp_clamped_to_now(make_client, fake_clock
     client._process_event(_event("2026-05-25T11:00:00Z"))  # 1h in the future
 
     assert seen[0].is_replay is False
-    assert client._event_high_water == now  # clamped to now, not the future stamp
+    assert client._event_high_water[_EVENT_KEY] == now  # clamped, not the future stamp
 
 
 async def test_handle_text_frame_strips_whitespace_then_processes(
@@ -643,9 +652,9 @@ async def test_connect_loop_success_and_disconnect_logs(
     assert f"pyrtl_433 connected to {WS_URL}" in msgs
     assert (
         f"pyrtl_433 connection anchor for {WS_URL}: "
-        "connected_at=2026-05-25T10:00:00+00:00 replay_high_water=none "
-        "(frames at/below high-water, or before connected_at, are suppressed "
-        "as replays)"
+        "connected_at=2026-05-25T10:00:00+00:00 replay_high_water tracked for "
+        "0 device(s) (a frame at/below its own device's high-water, or before "
+        "connected_at, is suppressed as a replay)"
     ) in msgs
     assert f"pyrtl_433 disconnected from {WS_URL}; reconnecting in 1s" in msgs
 
