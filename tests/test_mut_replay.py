@@ -215,11 +215,18 @@ class TestParseEventTime:
         assert parsed == expected
 
     def test_result_is_utc_aware(self):
-        """Every parsed instant is tz-aware and in UTC (kills the drop-as_utc mutant)."""
+        """Every parsed instant is tz-aware and in UTC (kills the drop-as_utc mutant).
+
+        ``tzinfo is UTC`` (not merely a zero ``utcoffset``) is what pins the
+        documented "single comparable UTC basis": ``astimezone(None)`` returns
+        the *system local* zone, which is the same instant -- so every equality
+        assertion still passes -- but is only zero-offset on a UTC host. On a CI
+        runner that happens to be UTC the weaker check silently admits it.
+        """
         for raw in ("2026-05-25 10:00:00", "2026-05-25T10:00:00+05:30"):
             parsed = parse_event_time(raw)
             assert parsed is not None
-            assert parsed.tzinfo is not None
+            assert parsed.tzinfo is UTC
             assert parsed.utcoffset() == timedelta(0)
 
     def test_surrounding_whitespace_is_stripped(self):
@@ -350,17 +357,14 @@ class TestParseEpoch:
 
 
 # --------------------------------------------------------------------------- #
-# Documented EQUIVALENT mutant on parse_event_time (not forced).               #
+# No EQUIVALENT mutants remain on parse_event_time.                            #
 # --------------------------------------------------------------------------- #
-# One surviving mutant is genuinely equivalent: ``if parsed.tzinfo is None:`` ->
-# ``if parsed.tzinfo is not None:`` (mutmut_21). Both branches reduce to the same
-# UTC instant:
-#   * naive input: original attaches the local zone then ``astimezone(UTC)``; the
-#     mutant skips the attach and calls ``astimezone(UTC)`` directly -- but a naive
-#     datetime's ``astimezone`` already assumes local time, so the result is
-#     identical.
-#   * aware input: original skips the attach and calls ``astimezone(UTC)``; the
-#     mutant first re-expresses it in the local zone (``astimezone()``) then
-#     ``astimezone(UTC)`` -- a round trip back to the same UTC instant.
-# No input distinguishes the two, so it is recorded here rather than suppressed.
-# ``parse_event_time``'s live UTC-reduction behaviour is fully pinned above.
+# This file previously recorded ``if parsed.tzinfo is None:`` -> ``is not None``
+# as genuinely equivalent. It is not: with ``default_tz`` supplied, the mutant
+# skips the attach and lets ``astimezone`` assume the *system local* zone, so
+# ``test_default_tz_interprets_naive_wall_clock`` distinguishes the two on any
+# host whose local zone is not the injected one. It is killed.
+#
+# The only other candidate, ``astimezone(UTC)`` -> ``astimezone(None)``, is
+# likewise not equivalent -- it returns the same instant in the system local
+# zone rather than UTC -- and is killed by ``test_result_is_utc_aware`` above.
