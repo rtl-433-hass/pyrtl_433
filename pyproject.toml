@@ -36,6 +36,7 @@ dev = [
     "pytest-cov>=7",
     "pytest-xdist>=3",
     "mutmut==3.7.0",
+    "mutmut-ratchet>=0.1.0",
     "ruff==0.16.5",
     "mypy>=1.19",
     "types-PyYAML>=6",
@@ -124,3 +125,52 @@ docstring-code-format = true
 # so intra-package imports resolve inside mutants/.
 source_paths = ["pyrtl_433/"]
 pytest_add_cli_args_test_selection = ["tests/"]
+
+# Shared mutation CI tooling (https://github.com/rtl-433-hass/mutmut-ratchet).
+# These are the per-repo constants the deleted ``scripts/mutation_*.py`` helpers
+# used to hard-code.
+[tool.mutmut_ratchet]
+package_path = "pyrtl_433"
+# Changes to these escalate a scoped PR run to a full one: they can move results
+# package-wide, so scoping to the diff would not be sound.
+escalate_paths = ["pyproject.toml", "tests/conftest.py", "uv.lock"]
+
+# Tests whose filename does not map 1:1 to a source module via the
+# ``test[_mut]_<name>.py`` -> ``<name>.py`` convention, declared with the modules
+# they actually exercise so a PR touching them scopes instead of escalating.
+# Genuinely broad tests are deliberately left out, so they still escalate.
+#
+# An entry that under-specifies a test's modules is caught by the full runs
+# (which re-verify the entire baseline), so it is a delayed catch, never a silent
+# floor blind spot.
+[tool.mutmut_ratchet.explicit_test_sources]
+# ``_urls.py`` has a leading underscore, so the convention resolves ``test_urls``
+# to a non-existent ``urls.py``; map it.
+"tests/test_urls.py" = ["_urls.py"]
+# Mutation-floor test files: the ``_floor`` suffix does not auto-resolve.
+"tests/test_mut_client_floor.py" = ["client.py"]
+# ``library`` is a package, not a module, so ``test_library`` resolves to a
+# non-existent ``library.py``. Its three test files each exercise the whole
+# subpackage (the facade re-exports every private helper they import), so all
+# three map to every module in it.
+"tests/test_library.py" = [
+    "library/__init__.py",
+    "library/_loader.py",
+    "library/_model.py",
+    "library/_overrides.py",
+    "library/_transform.py",
+]
+"tests/test_mut_library.py" = [
+    "library/__init__.py",
+    "library/_loader.py",
+    "library/_model.py",
+    "library/_overrides.py",
+    "library/_transform.py",
+]
+"tests/test_mut_library_floor.py" = [
+    "library/__init__.py",
+    "library/_loader.py",
+    "library/_model.py",
+    "library/_overrides.py",
+    "library/_transform.py",
+]

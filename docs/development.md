@@ -10,7 +10,14 @@ Tests follow a three-tier naming convention:
   above its ratchet baseline.
 
 The library holds a per-module mutation-score **floor** (killed / total mutants),
-enforced by the ratchet.
+enforced by the ratchet. The gate itself is
+[`mutmut-ratchet`](https://github.com/rtl-433-hass/mutmut-ratchet), a shared
+package: it scopes a PR's mutation run to the modules the diff could affect,
+fans the work across time-balanced shards, and fails only on a real per-file
+regression against the committed `scripts/mutation_baseline.json`. Its per-repo
+settings — the package path, the escalation triggers, and the test -> source
+overrides for tests whose name does not map 1:1 to a module — live in
+`[tool.mutmut_ratchet]` in `pyproject.toml`.
 
 ## Local commands
 
@@ -25,8 +32,17 @@ uv run pytest -n auto                                   # run the test suite (pa
 uv run ruff check . && uv run ruff format --check .     # lint + format
 uv run mypy pyrtl_433/                                  # strict type check
 uv run mutmut run                                       # mutation testing
-uv run python scripts/mutation_stats.py > stats.json    # collect per-module stats
-uv run python scripts/mutation_ratchet.py --mode floor --stats stats.json  # enforce the floor
+uv run mutmut-ratchet stats > stats.json                # collect per-module stats
+uv run mutmut-ratchet ratchet --mode floor --stats stats.json   # enforce the floor
+uv run mutmut-ratchet ratchet --mode strict --stats stats.json  # check the baseline is current
+```
+
+After a *full* `mutmut run`, `--update` ratchets the committed baseline upward
+and `mutmut-ratchet timings` refreshes the shard weights:
+
+```sh
+uv run mutmut-ratchet ratchet --mode floor --stats stats.json --update
+uv run mutmut-ratchet timings
 ```
 
 ## Continuous integration
