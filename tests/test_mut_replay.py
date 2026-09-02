@@ -16,8 +16,10 @@ import pytest
 from pyrtl_433.replay import (
     DISCOVERY_BACKLOG_GRACE,
     REPLAY_STALE_THRESHOLD,
+    TimePrecision,
     classify_replay,
     parse_event_time,
+    time_precision,
 )
 
 
@@ -354,6 +356,54 @@ class TestParseEpoch:
         Pins the ``ValueError`` catch around ``float()``.
         """
         assert parse_event_time("not-a-number") is None
+
+
+# --------------------------------------------------------------------------- #
+# time_precision: every branch and the raw-text (not parsed-value) signal.     #
+# --------------------------------------------------------------------------- #
+class TestTimePrecision:
+    """Pin all three outcomes, the enum values, and the regex's exact shape."""
+
+    def test_enum_values_are_the_documented_strings(self):
+        """Consumers key repairs off these; pins them against a renamed member."""
+        assert TimePrecision.MICROSECOND == "microsecond"
+        assert TimePrecision.SECOND == "second"
+        assert TimePrecision.UNUSABLE == "unusable"
+
+    def test_non_string_short_circuits_before_parsing(self):
+        """A non-string is UNUSABLE without reaching the regex.
+
+        Pins the ``isinstance`` guard: without it ``_SUBSECOND.search`` raises
+        ``TypeError`` on a non-string rather than returning a verdict.
+        """
+        assert time_precision(12345) == TimePrecision.UNUSABLE
+        assert time_precision(None) == TimePrecision.UNUSABLE
+
+    def test_parseable_but_no_fraction_is_second(self):
+        """Pins the SECOND fall-through against a MICROSECOND default."""
+        assert time_precision("2026-05-25T10:00:00Z") == TimePrecision.SECOND
+
+    def test_fraction_is_microsecond(self):
+        """Pins the MICROSECOND branch against a SECOND default."""
+        assert time_precision("2026-05-25T10:00:00.5Z") == TimePrecision.MICROSECOND
+
+    def test_zero_fraction_is_still_microsecond(self):
+        """``.000000`` is a format signal, not a value signal.
+
+        Kills a mutant that reads ``parsed.microsecond`` instead of the raw text.
+        """
+        assert time_precision("2026-05-25T10:00:00.000000Z") == (
+            TimePrecision.MICROSECOND
+        )
+
+    def test_trailing_dot_without_digits_is_not_a_fraction(self):
+        """Pins the digit requirement in the sub-second pattern.
+
+        ``float`` accepts a trailing dot, so ``"1779706800."`` parses -- but it
+        carries no sub-second component and must not be read as one. Kills a
+        mutant that drops the trailing digit class and matches a bare dot.
+        """
+        assert time_precision("1779706800.") == TimePrecision.SECOND
 
 
 # --------------------------------------------------------------------------- #

@@ -24,6 +24,7 @@ import aiohttp
 import pytest
 
 from pyrtl_433.normalizer import NormalizedEvent
+from pyrtl_433.replay import TimePrecision
 
 
 # --------------------------------------------------------------------------- #
@@ -283,6 +284,87 @@ async def test_shutdown_frame_flips_connectivity_and_fires_hub_update(make_clien
     assert len(hub_updates) == 1
     # A shutdown frame is not an event: nothing is emitted.
     assert client._queue.empty()
+
+
+# --------------------------------------------------------------------------- #
+# Event time precision: observed on the wire, reported to the consumer         #
+# --------------------------------------------------------------------------- #
+async def test_time_precision_starts_unknown_and_tracks_the_first_frame(make_client):
+    """``time_precision`` is ``None`` until a frame arrives, then classifies it."""
+    hub_updates: list[int] = []
+    client = make_client(on_hub_update=lambda: hub_updates.append(1))
+    assert client.time_precision is None
+
+    client._handle_text_frame(
+        '{"time": "2026-05-25 10:00:00", "model": "Foo", "id": 1, "temperature_C": 1.0}'
+    )
+
+    assert client.time_precision is TimePrecision.SECOND
+    assert len(hub_updates) == 1
+
+
+async def test_time_precision_fires_hub_update_only_on_change(make_client):
+    """A steady server config reports once, not once per frame."""
+    hub_updates: list[int] = []
+    client = make_client(on_hub_update=lambda: hub_updates.append(1))
+    for second in ("00", "01", "02"):
+        client._handle_text_frame(
+            f'{{"time": "2026-05-25 10:00:{second}", "model": "Foo", "id": 1, '
+            '"temperature_C": 1.0}'
+        )
+
+    assert client.time_precision is TimePrecision.SECOND
+    assert len(hub_updates) == 1
+
+
+async def test_time_precision_clears_itself_when_the_server_is_reconfigured(
+    make_client,
+):
+    """Latest-wins: a usec stamp after second-resolution ones flips the signal.
+
+    The consumer's remedy for SECOND is a server-side config change, so the
+    signal has to clear on the next frame after the operator makes it -- not stay
+    latched until the client restarts.
+    """
+    hub_updates: list[int] = []
+    client = make_client(on_hub_update=lambda: hub_updates.append(1))
+    client._handle_text_frame(
+        '{"time": "2026-05-25 10:00:00", "model": "Foo", "id": 1, "temperature_C": 1.0}'
+    )
+    assert client.time_precision is TimePrecision.SECOND
+
+    client._handle_text_frame(
+        '{"time": "2026-05-25 10:00:01.123456", "model": "Foo", "id": 1, '
+        '"temperature_C": 1.0}'
+    )
+
+    assert client.time_precision is TimePrecision.MICROSECOND
+    assert len(hub_updates) == 2
+
+
+async def test_time_precision_unusable_when_the_frame_has_no_time(make_client):
+    """A frame with no ``time`` key reports UNUSABLE (``report_meta time:off``)."""
+    client = make_client()
+
+    client._handle_text_frame('{"model": "Foo", "id": 1, "temperature_C": 1.0}')
+
+    assert client.time_precision is TimePrecision.UNUSABLE
+
+
+async def test_log_frames_do_not_drive_time_precision(make_client):
+    """Only device events classify the stamp format.
+
+    Server log frames carry their own ``time`` but are not the stream the replay
+    classification runs on, so they must not move the signal.
+    """
+    client = make_client()
+
+    client._handle_text_frame(
+        '{"time": "2026-05-25 10:00:00", "src": "Auto Level", "lvl": 4, '
+        '"msg": "Estimated noise level is -38.4 dB"}'
+    )
+
+    assert client.time_precision is None
 
 
 # --------------------------------------------------------------------------- #

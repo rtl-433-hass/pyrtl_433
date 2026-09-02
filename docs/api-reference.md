@@ -24,6 +24,22 @@ Read-only runtime snapshots are exposed as attributes: `client.connected`,
 them on demand with `await client.refresh_meta()` / `refresh_stats()` /
 `refresh_dev_info()`.
 
+`client.time_precision` reports the resolution of the server's event `time`
+stamps, observed from the frames themselves (`get_meta` carries no timestamp
+format, so there is nothing to ask). It is `None` until the first event frame,
+then one of:
+
+| Value | Server config | What it means for the consumer |
+| --- | --- | --- |
+| `TimePrecision.MICROSECOND` | `report_meta time:...usec...` | Two transmissions from one device are always distinguishable. |
+| `TimePrecision.SECOND` | rtl_433's default | Two transmissions from one device inside the same wall-clock second carry identical stamps and cannot be told apart by time alone. |
+| `TimePrecision.UNUSABLE` | `report_meta time:off`, or a form this parser does not accept | No frame has a usable timestamp, so replay suppression is off entirely — the server's reconnect backlog re-fires in full. |
+
+It is latest-wins, so it clears on the next frame after an operator changes the
+server's config, and `on_hub_update` fires whenever it changes. The library only
+reports it; deciding whether to surface the server-side remedy (adding
+`report_meta time:iso:usec:tz`) is the consumer's call.
+
 ## Module map
 
 | Module | Responsibility |
@@ -31,7 +47,7 @@ them on demand with `await client.refresh_meta()` / `refresh_stats()` /
 | `client.py` | `Rtl433Client` — the async WebSocket + `/cmd` transport: connect/reconnect loop, event dispatch, HTTP getters/setters, `validate_connection`. |
 | `normalizer.py` | Split a raw event into a deterministic device key + identity/measurement fields (`normalize`, `device_key`, `NormalizedEvent`). |
 | `naming.py` | Presentation helpers built on the device key: the `safe_token` builder it is made of, plus `display_name` and `identity_suffix` (the model-stripped id suffix). |
-| `replay.py` | Reconnect-replay classifier (`classify_replay`, `ReplayVerdict`) and `parse_event_time` timestamp parsing. |
+| `replay.py` | Reconnect-replay classifier (`classify_replay`, `ReplayVerdict`), `parse_event_time` timestamp parsing, and `time_precision` / `TimePrecision` stamp-resolution reporting. |
 | `sdr.py` | Pure SDR `/cmd` command transforms: the command registry, value read/convert helpers, and `gain_command_arg`. |
 | `library/` | The data-driven device library: YAML field mappings (`library/data/*.yaml`) loaded into a `Registry` of `FieldDescriptor`s, plus `lookup`, `should_skip`, `apply_transform`, and the user-override merge. See the [Device Library](device-library.md) reference. |
 | `availability.py` | Event-driven device classification (`is_event_driven`, `known_field_keys`) — the pure half of an availability-timeout policy. |

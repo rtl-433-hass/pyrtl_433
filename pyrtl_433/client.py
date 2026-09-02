@@ -44,7 +44,7 @@ import aiohttp
 from ._urls import build_cmd_url, build_ws_url, unwrap_result
 from .autolevel import AUTO_LEVEL_SRC, parse_auto_level
 from .normalizer import DEFAULT_SKIP_KEYS, NormalizedEvent, normalize
-from .replay import classify_replay, parse_event_time
+from .replay import TimePrecision, classify_replay, parse_event_time, time_precision
 
 LOGGER = logging.getLogger(__name__)
 
@@ -195,6 +195,13 @@ class Rtl433Client:
         # UTC time of the current successful connection (``None`` while
         # disconnected); anchors the pre-connection-backlog gate.
         self._connection_time: datetime | None = None
+        # Resolution of the server's event ``time`` stamps, as last observed on
+        # the wire (``None`` until the first event frame). Reported rather than
+        # acted on: at SECOND the client cannot tell two same-second
+        # transmissions from one device apart, and at UNUSABLE replay
+        # suppression is off entirely -- both are server-config remedies, so the
+        # consumer decides whether and how to surface them.
+        self.time_precision: TimePrecision | None = None
 
         # --- Internal lifecycle handles --------------------------------------
         self._task: asyncio.Task[None] | None = None
@@ -448,7 +455,9 @@ class Rtl433Client:
 
         # Read the raw ``time`` independently of ``normalize`` (which drops it) and
         # classify the frame into live / replay / stale gap / pre-connection backlog.
-        event_time = parse_event_time(event.get("time"), default_tz=self._event_tz)
+        raw_time = event.get("time")
+        event_time = parse_event_time(raw_time, default_tz=self._event_tz)
+        self._update_time_precision(raw_time)
         verdict = classify_replay(
             event_time,
             now,
@@ -472,6 +481,27 @@ class Rtl433Client:
         )
 
         self._emit_event(normalized)
+
+    def _update_time_precision(self, raw_time: Any) -> None:
+        """Track the server's ``time`` resolution, firing ``on_hub_update`` on change.
+
+        Latest-wins rather than worst-seen. The resolution is a property of the
+        server's ``report_meta time:...`` setting, so it is uniform across frames
+        and one frame classifies the connection; latest-wins then lets the signal
+        clear itself on the next frame after an operator fixes the setting,
+        instead of staying latched until the client restarts.
+        """
+        precision = time_precision(raw_time)
+        if precision == self.time_precision:
+            return
+        LOGGER.debug(
+            "pyrtl_433 event time precision for %s: %s -> %s",
+            self.ws_url,
+            self.time_precision,
+            precision,
+        )
+        self.time_precision = precision
+        self._invoke_callback(self._on_hub_update)
 
     def _emit_event(self, normalized: NormalizedEvent) -> None:
         """Publish a normalized event to the queue and the ``on_event`` callback."""
