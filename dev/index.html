@@ -410,6 +410,33 @@
   
   
     <li class="md-nav__item">
+      <a href="device-library/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Device Library
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="protocol-reference/" class="md-nav__link">
         
   
@@ -530,7 +557,8 @@
 WebSocket + <code>/cmd</code> API.</p>
 <p><code>pyrtl_433</code> speaks the <em>transport/protocol</em> half of an rtl_433 receiver: it
 connects to one server over a WebSocket, parses the JSON event stream, and drives
-the HTTP <code>/cmd</code> endpoint that reports and controls the SDR configuration.</p>
+the HTTP <code>/cmd</code> endpoint that reports and controls the SDR configuration. It also
+ships the data-driven <strong>device library</strong> that says what each rtl_433 field means.</p>
 <h2 id="what-it-does">What it does<a class="headerlink" href="#what-it-does" title="Permanent link">&para;</a></h2>
 <ul>
 <li>Streams decoded device events as <strong>normalized</strong> <code>NormalizedEvent</code> objects — a
@@ -546,6 +574,11 @@ the HTTP <code>/cmd</code> endpoint that reports and controls the SDR configurat
   pure command transforms, so you can retune, set gain, change sample rate, etc.</li>
 <li>Reconnects on drop with capped exponential backoff, and tolerates keep-alives,
   malformed JSON, and hidden <code>/cmd</code> endpoints without ever killing the loop.</li>
+<li>Ships the <strong>device library</strong>: YAML mappings from rtl_433 field name to an
+  entity descriptor (platform, device class, unit, state class, unique-id
+  suffix), the skip-key list, the value-transform pipeline, and a pure
+  user-override merge — plus the event-driven classifier an availability policy
+  needs.</li>
 </ul>
 <h2 id="next-steps">Next steps<a class="headerlink" href="#next-steps" title="Permanent link">&para;</a></h2>
 <ul>
@@ -553,6 +586,8 @@ the HTTP <code>/cmd</code> endpoint that reports and controls the SDR configurat
   a few lines.</li>
 <li><a href="api-reference/">API Reference</a> — the client constructor, runtime snapshots,
   and module map.</li>
+<li><a href="device-library/">Device Library</a> — the YAML mapping schema, lookup
+  resolution order, value transforms, and override merge semantics.</li>
 <li><a href="protocol-reference/">Protocol Reference</a> — the rtl_433 server's
   WebSocket/HTTP API this client speaks.</li>
 <li><a href="development/">Development</a> — testing and the mutation-score contract.</li>

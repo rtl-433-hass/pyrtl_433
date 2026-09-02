@@ -14,7 +14,7 @@
         <link rel="prev" href="../quickstart/">
       
       
-        <link rel="next" href="../protocol-reference/">
+        <link rel="next" href="../device-library/">
       
       
         
@@ -408,10 +408,59 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#device-library" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Device library
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#availability-classification" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Availability classification
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
       
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../device-library/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Device Library
+  
+
+    
+  </span>
+  
+  
+
+      </a>
     </li>
   
 
@@ -529,6 +578,28 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#device-library" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Device library
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#availability-classification" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Availability classification
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -587,6 +658,10 @@ them on demand with <code>await client.refresh_meta()</code> / <code>refresh_sta
 <td>Split a raw event into a deterministic device key + identity/measurement fields (<code>normalize</code>, <code>device_key</code>, <code>NormalizedEvent</code>).</td>
 </tr>
 <tr>
+<td><code>naming.py</code></td>
+<td>Presentation helpers built on the device key: the <code>safe_token</code> builder it is made of, plus <code>display_name</code> and <code>identity_suffix</code> (the model-stripped id suffix).</td>
+</tr>
+<tr>
 <td><code>replay.py</code></td>
 <td>Reconnect-replay classifier (<code>classify_replay</code>, <code>ReplayVerdict</code>) and <code>parse_event_time</code> timestamp parsing.</td>
 </tr>
@@ -595,11 +670,54 @@ them on demand with <code>await client.refresh_meta()</code> / <code>refresh_sta
 <td>Pure SDR <code>/cmd</code> command transforms: the command registry, value read/convert helpers, and <code>gain_command_arg</code>.</td>
 </tr>
 <tr>
+<td><code>library/</code></td>
+<td>The data-driven device library: YAML field mappings (<code>library/data/*.yaml</code>) loaded into a <code>Registry</code> of <code>FieldDescriptor</code>s, plus <code>lookup</code>, <code>should_skip</code>, <code>apply_transform</code>, and the user-override merge. See the <a href="../device-library/">Device Library</a> reference.</td>
+</tr>
+<tr>
+<td><code>availability.py</code></td>
+<td>Event-driven device classification (<code>is_event_driven</code>, <code>known_field_keys</code>) — the pure half of an availability-timeout policy.</td>
+</tr>
+<tr>
 <td><code>_urls.py</code></td>
 <td>WebSocket/<code>/cmd</code> URL builders and the <code>{"result": ...}</code> getter-response unwrap.</td>
 </tr>
 </tbody>
 </table>
+<h2 id="device-library">Device library<a class="headerlink" href="#device-library" title="Permanent link">&para;</a></h2>
+<p><code>load_library()</code> parses the packaged YAML into <code>(Registry, skip_keys)</code>;
+<code>lookup(field_key, model, registry=...)</code> resolves a <code>FieldDescriptor</code>
+(model-scoped first, then global) and <code>apply_transform(descriptor, raw_value)</code>
+converts a raw rtl_433 value into the state to store.</p>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">pyrtl_433</span><span class="w"> </span><span class="kn">import</span> <span class="n">apply_transform</span><span class="p">,</span> <span class="n">load_library</span><span class="p">,</span> <span class="n">lookup</span><span class="p">,</span> <span class="n">normalize</span>
+
+<span class="n">registry</span><span class="p">,</span> <span class="n">skip_keys</span> <span class="o">=</span> <span class="n">load_library</span><span class="p">()</span>
+<span class="n">normalized</span> <span class="o">=</span> <span class="n">normalize</span><span class="p">(</span><span class="n">event</span><span class="p">,</span> <span class="n">skip_keys</span><span class="p">)</span>
+<span class="k">for</span> <span class="n">field_key</span><span class="p">,</span> <span class="n">raw_value</span> <span class="ow">in</span> <span class="n">normalized</span><span class="o">.</span><span class="n">fields</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+    <span class="k">if</span> <span class="n">descriptor</span> <span class="o">:=</span> <span class="n">lookup</span><span class="p">(</span><span class="n">field_key</span><span class="p">,</span> <span class="n">normalized</span><span class="o">.</span><span class="n">model</span><span class="p">,</span> <span class="n">registry</span><span class="o">=</span><span class="n">registry</span><span class="p">):</span>
+        <span class="n">state</span> <span class="o">=</span> <span class="n">apply_transform</span><span class="p">(</span><span class="n">descriptor</span><span class="p">,</span> <span class="n">raw_value</span><span class="p">)</span>
+</code></pre></div>
+<p><code>FieldDescriptor</code>, <code>Registry</code>, <code>load_library</code>, <code>lookup</code> and <code>apply_transform</code> are
+re-exported at the package top level; the rest of the surface
+(<code>merge_overrides</code>, <code>validate_user_mappings</code>, <code>normalize_overrides</code>,
+<code>event_driven_field_keys</code>, <code>should_skip</code>, <code>USER_OVERRIDE_FILENAME</code>) is imported
+from <code>pyrtl_433.library</code>. The YAML schema, the resolution order, and the
+override merge semantics are documented in
+<a href="../device-library/">Device Library</a>.</p>
+<h2 id="availability-classification">Availability classification<a class="headerlink" href="#availability-classification" title="Permanent link">&para;</a></h2>
+<p><code>pyrtl_433</code> ships the classifier, not the timeout policy — the consumer maps the
+boolean onto its own defaults (typically never-expire for event-driven devices,
+a finite default for periodic ones).</p>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">pyrtl_433</span><span class="w"> </span><span class="kn">import</span> <span class="n">is_event_driven</span><span class="p">,</span> <span class="n">known_field_keys</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pyrtl_433.library</span><span class="w"> </span><span class="kn">import</span> <span class="n">event_driven_field_keys</span>
+
+<span class="n">event_keys</span> <span class="o">=</span> <span class="n">event_driven_field_keys</span><span class="p">(</span><span class="n">registry</span><span class="p">)</span>
+<span class="n">fields</span> <span class="o">=</span> <span class="n">known_field_keys</span><span class="p">(</span><span class="n">adopted_field_keys</span><span class="p">,</span> <span class="n">latest_payload_field_keys</span><span class="p">)</span>
+<span class="n">never_expires</span> <span class="o">=</span> <span class="n">is_event_driven</span><span class="p">(</span><span class="n">fields</span><span class="p">,</span> <span class="n">event_keys</span><span class="p">)</span>
+</code></pre></div>
+<p><code>known_field_keys</code> unions the persisted (restart-surviving) field keys with the
+latest live payload's, so a device that has been silent since a restart is still
+classified from what it reported before. An empty <code>event_keys</code> yields <code>False</code>, so
+a failed library load degrades to the periodic default.</p>
 
 
 
