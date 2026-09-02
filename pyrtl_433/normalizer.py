@@ -14,6 +14,10 @@ nothing from it, and ``normalize`` takes the ``skip_keys`` set as a parameter so
 the caller injects the loaded skip-keys (from
 :func:`pyrtl_433.library.load_library`) rather than this module importing the
 loader.
+
+The token builder the device key is made of now lives in
+:mod:`pyrtl_433.naming` (as the public :func:`~pyrtl_433.naming.safe_token`),
+alongside the display-name/serial-number helpers built on the same key shape.
 """
 
 from __future__ import annotations
@@ -21,6 +25,13 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Final
+
+from .naming import safe_token
+
+# Backward-compatible private alias: the token builder used to live here, and
+# consumers reached into the private name before it was published. It is now
+# :func:`pyrtl_433.naming.safe_token`; the alias keeps those imports working.
+_safe_token = safe_token
 
 # Identity keys, in the order they contribute to the device key. ``model`` is
 # always the prefix when present; ``id`` / ``channel`` / ``subtype`` are appended
@@ -77,24 +88,6 @@ class NormalizedEvent:
     is_repaint: bool = False
 
 
-def _safe_token(value: Any) -> str:
-    """Return an HA-safe token for an identity value.
-
-    Keeps the token deterministic and human-readable: only characters that are
-    unsafe in unique_ids / dispatcher signals (whitespace and ``/``) are
-    collapsed to underscores. The same input always produces the same token.
-    """
-    text = str(value).strip()
-    out: list[str] = []
-    for ch in text:
-        if ch.isalnum() or ch in ("-", "_", "."):
-            out.append(ch)
-        else:
-            out.append("_")
-    token = "".join(out).strip("_")
-    return token or "unknown"
-
-
 def device_key(event: dict[str, Any]) -> str:
     """Derive a deterministic, stable device key from an event's identity keys.
 
@@ -119,14 +112,14 @@ def device_key(event: dict[str, Any]) -> str:
     parts: list[str] = []
 
     model = event.get("model")
-    parts.append(_safe_token(model) if model is not None else "unknown")
+    parts.append(safe_token(model) if model is not None else "unknown")
 
     if (raw_id := event.get("id")) is not None:
-        parts.append(_safe_token(raw_id))
+        parts.append(safe_token(raw_id))
     if (channel := event.get("channel")) is not None:
-        parts.append(f"ch{_safe_token(channel)}")
+        parts.append(f"ch{safe_token(channel)}")
     if (subtype := event.get("subtype")) is not None:
-        parts.append(f"st{_safe_token(subtype)}")
+        parts.append(f"st{safe_token(subtype)}")
 
     return "-".join(parts)
 
