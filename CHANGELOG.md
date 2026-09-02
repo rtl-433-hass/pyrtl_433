@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.3.0](https://github.com/rtl-433-hass/pyrtl_433/compare/v0.2.0...v0.3.0) (2026-09-02)
+
+
+### Features
+
+* **library:** ship the rtl_433 device-mapping library ([#33](https://github.com/rtl-433-hass/pyrtl_433/issues/33)) ([7cba591](https://github.com/rtl-433-hass/pyrtl_433/commit/7cba591a966bae319393fe9cb04b689e467c1f3f))
+* **naming:** publish device-naming helpers ([#35](https://github.com/rtl-433-hass/pyrtl_433/issues/35)) ([54a0cbd](https://github.com/rtl-433-hass/pyrtl_433/commit/54a0cbdcf75b617cdc90ef4ee238220eb04a78f3))
+
+
+### Bug Fixes
+
+* track replay high-water mark per device ([#32](https://github.com/rtl-433-hass/pyrtl_433/issues/32)) ([f1952e0](https://github.com/rtl-433-hass/pyrtl_433/commit/f1952e082a2cb5732c659b38add49e88614db9aa))
+
+
+### Documentation
+
+* drop the stale "not yet published to PyPI" wording ([65a5ae6](https://github.com/rtl-433-hass/pyrtl_433/commit/65a5ae6090bf611b3697f371ab394578142b9249))
+
 ## [0.2.0](https://github.com/rtl-433-hass/pyrtl_433/compare/v0.1.1...v0.2.0) (2026-07-17)
 
 
