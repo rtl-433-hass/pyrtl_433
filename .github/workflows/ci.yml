@@ -28,5 +28,5 @@ jobs:
       - name: Mutation test (per-module floor ratchet)
         run: |
           uv run mutmut run --max-children 4
-          uv run python scripts/mutation_stats.py > mutation-stats.json
-          uv run python scripts/mutation_ratchet.py --mode floor --stats mutation-stats.json
+          uv run mutmut-ratchet stats > mutation-stats.json
+          uv run mutmut-ratchet ratchet --mode floor --stats mutation-stats.json
