@@ -24,6 +24,7 @@ import aiohttp
 import pytest
 
 from pyrtl_433.client import CannotConnect, Rtl433Client
+from pyrtl_433.replay import TimePrecision
 
 HOST = "rtl433.local"
 CMD_URL = "http://rtl433.local:8433/cmd"
@@ -176,6 +177,47 @@ async def test_process_event_stale_gap_advances_high_water(make_client, fake_clo
     assert client._event_high_water[_EVENT_KEY] == datetime(
         2026, 5, 25, 10, 0, 0, tzinfo=UTC
     )
+
+
+async def test_time_precision_debug_log_is_exact(make_client, fake_clock, caplog):
+    """Pin the precision-transition DEBUG line, arguments included.
+
+    Kills the mutants that null a format argument (url / old / new) or mangle
+    the message text: each leaves the transition itself working, so only the
+    rendered line distinguishes them.
+    """
+    fake_clock.set(datetime(2026, 5, 25, 10, 0, 0, tzinfo=UTC))
+    client = make_client()
+    client.time_precision = TimePrecision.SECOND
+
+    with caplog.at_level(logging.DEBUG, logger="pyrtl_433.client"):
+        client._update_time_precision("2026-05-25 10:00:00.123456")
+
+    assert client.time_precision is TimePrecision.MICROSECOND
+    messages = [
+        r.getMessage()
+        for r in caplog.records
+        if r.levelno == logging.DEBUG and r.name == "pyrtl_433.client"
+    ]
+    # ``StrEnum`` renders as its value under ``%s``, so the line reads with the
+    # bare strings a consumer would also see.
+    assert (
+        f"pyrtl_433 event time precision for {WS_URL}: second -> microsecond"
+    ) in messages
+
+
+async def test_time_precision_unchanged_logs_nothing(make_client, caplog):
+    """No transition -> no log line and no callback (pins the early return)."""
+    hub_updates: list[int] = []
+    client = make_client(on_hub_update=lambda: hub_updates.append(1))
+    client.time_precision = TimePrecision.SECOND
+
+    with caplog.at_level(logging.DEBUG, logger="pyrtl_433.client"):
+        client._update_time_precision("2026-05-25 10:00:00")
+
+    assert client.time_precision is TimePrecision.SECOND
+    assert hub_updates == []
+    assert not [r for r in caplog.records if "event time precision" in r.getMessage()]
 
 
 async def test_process_event_backlog_is_replay(make_client, fake_clock):
