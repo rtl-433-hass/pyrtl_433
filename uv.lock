@@ -438,6 +438,18 @@ wheels = [
 ]
 
 [[package]]
+name = "mutmut-ratchet"
+version = "0.1.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "mutmut" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/7b/8e/df8c0e139c0336c67cc2f45da7c82a21c17d5e448c0de59d21b1d16b0dfd/mutmut_ratchet-0.1.0.tar.gz", hash = "sha256:6369507d04e8d772cc8bd05c4095ba9184a426120500a565c1069ddc6a7a8bf8", size = 45092, upload-time = "2026-09-02T18:13:28.378Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/c7/2c/64246e5a6ba84752738d7f5f68b0214f4a8477960cb0b5074946875f5b35/mutmut_ratchet-0.1.0-py3-none-any.whl", hash = "sha256:16924e7e5228be92532f353193705c901d04517d0a0637ec8299892f9865edcb", size = 30482, upload-time = "2026-09-02T18:13:27.268Z" },
+]
+
+[[package]]
 name = "mypy"
 version = "2.1.0"
 source = { registry = "https://pypi.org/simple" }
@@ -576,6 +588,7 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "mutmut" },
+    { name = "mutmut-ratchet" },
     { name = "mypy" },
     { name = "pytest" },
     { name = "pytest-aiohttp" },
@@ -595,6 +608,7 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "mutmut", specifier = "==3.7.0" },
+    { name = "mutmut-ratchet", specifier = ">=0.1.0" },
     { name = "mypy", specifier = ">=1.19" },
     { name = "pytest", specifier = ">=9" },
     { name = "pytest-aiohttp", specifier = ">=1.1" },
