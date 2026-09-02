@@ -183,10 +183,15 @@ class Rtl433Client:
         # is logged once per command until it recovers (never floods on refresh).
         self._malformed_cmds: set[str] = set()
 
-        # High-water mark of the maximum event ``time`` (UTC) ever parsed, used to
-        # classify each frame against the reconnect replay. Spans reconnects so a
-        # brief blip's re-sent buffer tail is recognised as already-seen.
-        self._event_high_water: datetime | None = None
+        # Per-device high-water mark of the maximum event ``time`` (UTC) parsed
+        # for each ``device_key``, used to classify each frame against the
+        # reconnect replay. Spans reconnects so a brief blip's re-sent buffer tail
+        # is recognised as already-seen. Keyed per device because rtl_433 stamps
+        # ``time`` at 1-second resolution: a receiver hearing several sensors
+        # routinely sees two *different* devices in the same second, and one
+        # device's mark says nothing about whether another device's frame has
+        # already been seen.
+        self._event_high_water: dict[str, datetime] = {}
         # UTC time of the current successful connection (``None`` while
         # disconnected); anchors the pre-connection-backlog gate.
         self._connection_time: datetime | None = None
@@ -323,13 +328,12 @@ class Rtl433Client:
                     # ``_process_event`` is judged against these two values.
                     LOGGER.debug(
                         "pyrtl_433 connection anchor for %s: connected_at=%s "
-                        "replay_high_water=%s (frames at/below high-water, or "
-                        "before connected_at, are suppressed as replays)",
+                        "replay_high_water tracked for %d device(s) (a frame at/"
+                        "below its own device's high-water, or before "
+                        "connected_at, is suppressed as a replay)",
                         self.ws_url,
                         self._connection_time.isoformat(),
-                        self._event_high_water.isoformat()
-                        if self._event_high_water is not None
-                        else "none",
+                        len(self._event_high_water),
                     )
                     # Seed SDR/meta config, stats, and device identity over HTTP
                     # (never the socket). Each getter swallows its own failures, so
@@ -448,11 +452,11 @@ class Rtl433Client:
         verdict = classify_replay(
             event_time,
             now,
-            high_water=self._event_high_water,
+            high_water=self._event_high_water.get(normalized.device_key),
             connection_time=self._connection_time,
         )
         if verdict.new_high_water is not None:
-            self._event_high_water = verdict.new_high_water
+            self._event_high_water[normalized.device_key] = verdict.new_high_water
 
         # Carry the classification on the event object (the emission carrier).
         normalized = dataclasses.replace(

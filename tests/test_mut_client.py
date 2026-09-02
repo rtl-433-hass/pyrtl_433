@@ -706,7 +706,7 @@ async def test_initial_state(make_client):
     assert client.stats == {}
     assert client.dev_info == {}
     assert client.dev_query is None
-    assert client._event_high_water is None
+    assert client._event_high_water == {}
     assert client._connection_time is None
     assert client._malformed_cmds == set()
 

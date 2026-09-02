@@ -153,8 +153,10 @@ async def test_replay_frame_flagged_is_replay(make_client, fake_clock):
     fake_clock.set(datetime(2026, 5, 25, 10, 0, 5, tzinfo=UTC))
     seen: list[NormalizedEvent] = []
     client = make_client(on_event=seen.append)
-    # Pretend we have already seen an event at 10:00:00.
-    client._event_high_water = datetime(2026, 5, 25, 10, 0, 0, tzinfo=UTC)
+    # Pretend we have already seen an event from this device at 10:00:00.
+    client._event_high_water = {
+        "Acurite-606TX-42": datetime(2026, 5, 25, 10, 0, 0, tzinfo=UTC)
+    }
 
     client._handle_text_frame(
         '{"time": "2026-05-25T10:00:00Z", "model": "Acurite-606TX", '
@@ -163,6 +165,64 @@ async def test_replay_frame_flagged_is_replay(make_client, fake_clock):
 
     assert len(seen) == 1
     assert seen[0].is_replay is True  # still emitted so it can seed values
+
+
+async def test_distinct_devices_sharing_a_timestamp_second_stay_live(
+    make_client, fake_clock
+):
+    """Two *different* devices stamped in the same second are both live.
+
+    rtl_433 stamps ``time`` at 1-second resolution, so on a receiver hearing
+    several sensors two unrelated devices routinely land in the same second. The
+    second frame must not be classified as an already-seen replay merely because
+    another device just advanced the mark -- it is a genuine live transmission
+    and must refresh its own device's liveness.
+    """
+    fake_clock.set(datetime(2026, 5, 25, 10, 0, 0, tzinfo=UTC))
+    seen: list[NormalizedEvent] = []
+    client = make_client(on_event=seen.append)
+
+    client._handle_text_frame(
+        '{"time": "2026-05-25T10:00:00Z", "model": "Fineoffset-WS90", '
+        '"id": 40067, "temperature_C": 18.2}'
+    )
+    client._handle_text_frame(
+        '{"time": "2026-05-25T10:00:00Z", "model": "Fineoffset-WH51", '
+        '"id": "0d6d2b", "moisture": 36}'
+    )
+
+    assert len(seen) == 2
+    assert seen[0].device_key != seen[1].device_key
+    assert [event.is_replay for event in seen] == [False, False]
+
+
+async def test_replay_mark_is_tracked_per_device(make_client, fake_clock):
+    """One device's mark never suppresses another device's frame.
+
+    The per-device replay guard must still fire for the *same* device (a re-sent
+    buffer tail on reconnect) while leaving an unrelated device untouched.
+    """
+    fake_clock.set(datetime(2026, 5, 25, 10, 0, 5, tzinfo=UTC))
+    seen: list[NormalizedEvent] = []
+    client = make_client(on_event=seen.append)
+
+    # A live frame from device A advances only A's mark.
+    client._handle_text_frame(
+        '{"time": "2026-05-25T10:00:05Z", "model": "Foo", "id": 1, '
+        '"temperature_C": 1.0}'
+    )
+    # The same device re-sending an older frame is a replay.
+    client._handle_text_frame(
+        '{"time": "2026-05-25T10:00:05Z", "model": "Foo", "id": 1, '
+        '"temperature_C": 1.0}'
+    )
+    # A different device at that same second is still live.
+    client._handle_text_frame(
+        '{"time": "2026-05-25T10:00:05Z", "model": "Bar", "id": 2, '
+        '"temperature_C": 2.0}'
+    )
+
+    assert [event.is_replay for event in seen] == [False, True, False]
 
 
 async def test_event_tz_interprets_naive_timestamp(make_client, fake_clock):
@@ -202,8 +262,10 @@ async def test_stale_gap_frame_flagged_is_replay(make_client, fake_clock):
 
     assert len(seen) == 1
     assert seen[0].is_replay is True
-    # The high-water mark advanced to the gap event's time.
-    assert client._event_high_water == datetime(2026, 5, 25, 10, 0, 0, tzinfo=UTC)
+    # The high-water mark advanced to the gap event's time, for that device.
+    assert client._event_high_water["Foo-1"] == datetime(
+        2026, 5, 25, 10, 0, 0, tzinfo=UTC
+    )
 
 
 # --------------------------------------------------------------------------- #
