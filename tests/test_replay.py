@@ -17,6 +17,7 @@ from pyrtl_433.replay import (
     TimePrecision,
     classify_replay,
     parse_event_time,
+    payload_identity,
     time_precision,
 )
 
@@ -115,6 +116,116 @@ def test_future_timestamp_clamps_high_water_to_now():
     assert verdict.is_replay is False
     # ...but the mark is clamped to ``now``, not pushed out to the future stamp.
     assert verdict.new_high_water == now
+
+
+# --------------------------------------------------------------------------- #
+# payload_identity + the same-stamp payload exception.                         #
+# --------------------------------------------------------------------------- #
+def test_payload_identity_ignores_per_decode_signal_levels():
+    """Receiver-measured levels are excluded; device data is not.
+
+    rssi/snr/noise/freq are measured separately for each decode of one
+    transmission, so including them would make every repeat look distinct.
+    """
+    burst_1 = {"state": "open", "rssi": -11.2, "snr": 9.4, "noise": -20.6}
+    burst_2 = {"state": "open", "rssi": -12.8, "snr": 8.1, "noise": -21.9}
+    assert payload_identity(burst_1) == payload_identity(burst_2)
+    # A real change in device data still separates them.
+    assert payload_identity({"state": "closed"}) != payload_identity(burst_1)
+
+
+def test_payload_identity_is_order_independent_and_handles_odd_values():
+    """Key order never matters, and unhashable values do not raise."""
+    assert payload_identity({"a": 1, "b": 2}) == payload_identity({"b": 2, "a": 1})
+    # Some rtl_433 payloads carry lists/dicts; ``repr`` gives them a stable form.
+    assert payload_identity({"rows": [1, 2]}) == payload_identity({"rows": [1, 2]})
+    assert payload_identity({}) == ()
+
+
+def test_same_stamp_with_a_new_payload_is_live():
+    """One device's second transmission inside a stamp's resolution is live.
+
+    At rtl_433's default 1-second resolution both transmissions carry the same
+    ``time``, so the mark alone cannot separate them -- but the payload can, and
+    suppressing the second would drop a real state change.
+    """
+    verdict = classify_replay(
+        _utc(10, 0, 0),
+        _utc(10, 0, 0),
+        high_water=_utc(10, 0, 0),
+        connection_time=_utc(9, 0, 0),
+        payload=payload_identity({"state": "closed"}),
+        seen_payloads={payload_identity({"state": "open"})},
+    )
+    assert verdict.is_replay is False
+    assert verdict.label == "LIVE (payload differs at same high_water stamp)"
+
+
+def test_same_stamp_with_the_same_payload_is_a_replay():
+    """A repeat of one transmission is still suppressed."""
+    same = payload_identity({"state": "open"})
+    verdict = classify_replay(
+        _utc(10, 0, 0),
+        _utc(10, 0, 0),
+        high_water=_utc(10, 0, 0),
+        connection_time=_utc(9, 0, 0),
+        payload=same,
+        seen_payloads={same},
+    )
+    assert verdict.is_replay is True
+    assert verdict.new_high_water is None  # the mark is left alone
+
+
+def test_a_strictly_older_stamp_stays_a_replay_whatever_it_carries():
+    """The payload exception is for equal stamps only.
+
+    A frame timestamped *before* the mark is genuinely in the past -- a re-sent
+    buffer tail, or an out-of-order delivery -- and differing data does not make
+    it new.
+    """
+    verdict = classify_replay(
+        _utc(10, 0, 0),
+        _utc(10, 0, 5),
+        high_water=_utc(10, 0, 1),
+        connection_time=_utc(9, 0, 0),
+        payload=payload_identity({"temperature_C": 20.5}),
+        seen_payloads={payload_identity({"temperature_C": 21.0})},
+    )
+    assert verdict.is_replay is True
+    assert verdict.label == "REPLAY (event_time<=high_water)"
+
+
+def test_a_payload_seen_earlier_at_the_same_stamp_is_still_a_replay():
+    """Membership, not adjacency: repeats need not be consecutive.
+
+    A receiver decoding several devices interleaves them, so the frame before a
+    repeat is often some other transmission -- and on a reconnect inside the
+    backlog gate's grace window the server re-sends the whole tail. Either way
+    the payload was already seen at this instant.
+    """
+    verdict = classify_replay(
+        _utc(10, 0, 0),
+        _utc(10, 0, 0),
+        high_water=_utc(10, 0, 0),
+        connection_time=_utc(9, 0, 0),
+        payload=payload_identity({"state": "open"}),
+        seen_payloads={
+            payload_identity({"state": "open"}),
+            payload_identity({"state": "closed"}),
+        },
+    )
+    assert verdict.is_replay is True
+
+
+def test_omitting_payloads_keeps_the_timestamp_only_behaviour():
+    """A caller that supplies no payload information gets the old classifier."""
+    verdict = classify_replay(
+        _utc(10, 0, 0),
+        _utc(10, 0, 0),
+        high_water=_utc(10, 0, 0),
+        connection_time=None,
+    )
+    assert verdict.is_replay is True
 
 
 # --------------------------------------------------------------------------- #

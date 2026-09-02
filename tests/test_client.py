@@ -23,6 +23,8 @@ from zoneinfo import ZoneInfo
 import aiohttp
 import pytest
 
+from pyrtl_433 import client as client_module
+from pyrtl_433.client import _DeviceReplayState
 from pyrtl_433.normalizer import NormalizedEvent
 from pyrtl_433.replay import TimePrecision
 
@@ -154,10 +156,12 @@ async def test_replay_frame_flagged_is_replay(make_client, fake_clock):
     fake_clock.set(datetime(2026, 5, 25, 10, 0, 5, tzinfo=UTC))
     seen: list[NormalizedEvent] = []
     client = make_client(on_event=seen.append)
-    # Pretend we have already seen an event from this device at 10:00:00.
-    client._event_high_water = {
-        "Acurite-606TX-42": datetime(2026, 5, 25, 10, 0, 0, tzinfo=UTC)
-    }
+    # Pretend we have already seen an event from this device at 10:00:00. No
+    # payload is recorded, so the mark alone decides -- the timestamp-only
+    # behaviour this guard had before payloads were considered.
+    client._device_state["Acurite-606TX-42"] = _DeviceReplayState(
+        high_water=datetime(2026, 5, 25, 10, 0, 0, tzinfo=UTC)
+    )
 
     client._handle_text_frame(
         '{"time": "2026-05-25T10:00:00Z", "model": "Acurite-606TX", '
@@ -226,6 +230,91 @@ async def test_replay_mark_is_tracked_per_device(make_client, fake_clock):
     assert [event.is_replay for event in seen] == [False, True, False]
 
 
+async def test_same_second_state_change_from_one_device_stays_live(
+    make_client, fake_clock
+):
+    """One device's two *different* payloads in the same second are both live.
+
+    A contact sensor opened and closed inside one wall-clock second stamps both
+    transmissions identically at rtl_433's default 1-second resolution. The
+    second is a real state change, not a re-send, and suppressing it loses the
+    transition entirely.
+    """
+    fake_clock.set(datetime(2026, 5, 25, 10, 0, 0, tzinfo=UTC))
+    seen: list[NormalizedEvent] = []
+    client = make_client(on_event=seen.append)
+
+    for state in ("open", "closed"):
+        client._handle_text_frame(
+            f'{{"time": "2026-05-25 10:00:00", "model": "Generic-Contact", '
+            f'"id": 4231, "state": "{state}"}}'
+        )
+
+    assert [event.fields["state"] for event in seen] == ["open", "closed"]
+    assert [event.is_replay for event in seen] == [False, False]
+
+
+async def test_same_second_identical_payload_is_still_suppressed(
+    make_client, fake_clock
+):
+    """A decoder repeating one transmission is still collapsed to a single event."""
+    fake_clock.set(datetime(2026, 5, 25, 10, 0, 0, tzinfo=UTC))
+    seen: list[NormalizedEvent] = []
+    client = make_client(on_event=seen.append)
+    frame = (
+        '{"time": "2026-05-25 10:00:00", "model": "Generic-Contact", '
+        '"id": 4231, "state": "open"}'
+    )
+
+    client._handle_text_frame(frame)
+    client._handle_text_frame(frame)
+    client._handle_text_frame(frame)
+
+    assert [event.is_replay for event in seen] == [False, True, True]
+
+
+async def test_repeat_burst_with_varying_signal_levels_is_still_suppressed(
+    make_client, fake_clock
+):
+    """Per-decode signal levels must not make a repeat look like a new payload.
+
+    With ``report_meta level`` the server adds rssi/snr/noise, which the receiver
+    measures separately for each decode of the *same* transmission. Comparing
+    them would make every repeat look distinct and defeat the guard on exactly
+    the servers that enable them -- the rtl_433 add-on's default among them.
+    """
+    fake_clock.set(datetime(2026, 5, 25, 10, 0, 0, tzinfo=UTC))
+    seen: list[NormalizedEvent] = []
+    client = make_client(on_event=seen.append)
+
+    for rssi, snr in ((-11.2, 9.4), (-12.8, 8.1)):
+        client._handle_text_frame(
+            f'{{"time": "2026-05-25 10:00:00", "model": "Generic-Contact", '
+            f'"id": 4231, "state": "open", "rssi": {rssi}, "snr": {snr}}}'
+        )
+
+    assert [event.is_replay for event in seen] == [False, True]
+
+
+async def test_device_state_is_capped_evicting_the_coldest(
+    make_client, fake_clock, monkeypatch
+):
+    """The per-device map is bounded, dropping the least-recently-heard device."""
+    monkeypatch.setattr(client_module, "_MAX_TRACKED_DEVICES", 3)
+    fake_clock.set(datetime(2026, 5, 25, 10, 0, 0, tzinfo=UTC))
+    client = make_client()
+
+    for device_id in range(5):
+        client._handle_text_frame(
+            f'{{"time": "2026-05-25 10:00:00", "model": "Noise", '
+            f'"id": {device_id}, "temperature_C": 1.0}}'
+        )
+
+    assert len(client._device_state) == 3
+    # The three most recently heard survive; the first two were evicted.
+    assert list(client._device_state) == ["Noise-2", "Noise-3", "Noise-4"]
+
+
 async def test_event_tz_interprets_naive_timestamp(make_client, fake_clock):
     """``event_tz`` classifies an offset-less timestamp in the injected zone.
 
@@ -264,7 +353,7 @@ async def test_stale_gap_frame_flagged_is_replay(make_client, fake_clock):
     assert len(seen) == 1
     assert seen[0].is_replay is True
     # The high-water mark advanced to the gap event's time, for that device.
-    assert client._event_high_water["Foo-1"] == datetime(
+    assert client._device_state["Foo-1"].high_water == datetime(
         2026, 5, 25, 10, 0, 0, tzinfo=UTC
     )
 

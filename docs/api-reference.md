@@ -47,7 +47,7 @@ reports it; deciding whether to surface the server-side remedy (adding
 | `client.py` | `Rtl433Client` — the async WebSocket + `/cmd` transport: connect/reconnect loop, event dispatch, HTTP getters/setters, `validate_connection`. |
 | `normalizer.py` | Split a raw event into a deterministic device key + identity/measurement fields (`normalize`, `device_key`, `NormalizedEvent`). |
 | `naming.py` | Presentation helpers built on the device key: the `safe_token` builder it is made of, plus `display_name` and `identity_suffix` (the model-stripped id suffix). |
-| `replay.py` | Reconnect-replay classifier (`classify_replay`, `ReplayVerdict`), `parse_event_time` timestamp parsing, and `time_precision` / `TimePrecision` stamp-resolution reporting. |
+| `replay.py` | Reconnect-replay classifier (`classify_replay`, `ReplayVerdict`), `parse_event_time` timestamp parsing, `payload_identity` — the per-decode-noise-free payload comparison that separates a repeated transmission from a new one sharing its timestamp — and `time_precision` / `TimePrecision` stamp-resolution reporting. |
 | `sdr.py` | Pure SDR `/cmd` command transforms: the command registry, value read/convert helpers, and `gain_command_arg`. |
 | `library/` | The data-driven device library: YAML field mappings (`library/data/*.yaml`) loaded into a `Registry` of `FieldDescriptor`s, plus `lookup`, `should_skip`, `apply_transform`, and the user-override merge. See the [Device Library](device-library.md) reference. |
 | `availability.py` | Event-driven device classification (`is_event_driven`, `known_field_keys`) — the pure half of an availability-timeout policy. |
