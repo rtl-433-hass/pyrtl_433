@@ -15,6 +15,7 @@ from .autolevel import AUTO_LEVEL_SRC, AutoLevelReading, parse_auto_level
 from .availability import is_event_driven, known_field_keys
 from .client import CannotConnect, Rtl433Client
 from .library import FieldDescriptor, Registry, apply_transform, load_library, lookup
+from .naming import display_name, identity_suffix, safe_token
 from .normalizer import NormalizedEvent, device_key, normalize
 from .replay import ReplayVerdict, classify_replay
 
@@ -30,10 +31,13 @@ __all__ = [
     "apply_transform",
     "classify_replay",
     "device_key",
+    "display_name",
+    "identity_suffix",
     "is_event_driven",
     "known_field_keys",
     "load_library",
     "lookup",
     "normalize",
     "parse_auto_level",
+    "safe_token",
 ]

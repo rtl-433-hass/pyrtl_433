@@ -40,10 +40,15 @@
       "score": 0.954286,
       "total": 175
     },
+    "pyrtl_433/naming.py": {
+      "killed": 33,
+      "score": 0.970588,
+      "total": 34
+    },
     "pyrtl_433/normalizer.py": {
-      "killed": 74,
-      "score": 0.986667,
-      "total": 75
+      "killed": 56,
+      "score": 1.0,
+      "total": 56
     },
     "pyrtl_433/replay.py": {
       "killed": 100,

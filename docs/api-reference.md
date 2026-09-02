@@ -30,6 +30,7 @@ them on demand with `await client.refresh_meta()` / `refresh_stats()` /
 | --- | --- |
 | `client.py` | `Rtl433Client` — the async WebSocket + `/cmd` transport: connect/reconnect loop, event dispatch, HTTP getters/setters, `validate_connection`. |
 | `normalizer.py` | Split a raw event into a deterministic device key + identity/measurement fields (`normalize`, `device_key`, `NormalizedEvent`). |
+| `naming.py` | Presentation helpers built on the device key: the `safe_token` builder it is made of, plus `display_name` and `identity_suffix` (the model-stripped id suffix). |
 | `replay.py` | Reconnect-replay classifier (`classify_replay`, `ReplayVerdict`) and `parse_event_time` timestamp parsing. |
 | `sdr.py` | Pure SDR `/cmd` command transforms: the command registry, value read/convert helpers, and `gain_command_arg`. |
 | `library/` | The data-driven device library: YAML field mappings (`library/data/*.yaml`) loaded into a `Registry` of `FieldDescriptor`s, plus `lookup`, `should_skip`, `apply_transform`, and the user-override merge. See the [Device Library](device-library.md) reference. |
