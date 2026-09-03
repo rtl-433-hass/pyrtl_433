@@ -16,12 +16,13 @@ reasoned about and unit-tested in isolation.
 
 from __future__ import annotations
 
+from collections.abc import Collection, Mapping
 import dataclasses
 from datetime import UTC, datetime, timedelta, tzinfo
 import enum
 import logging
 import re
-from typing import Any
+from typing import Any, Final
 
 LOGGER = logging.getLogger(__name__)
 
@@ -83,6 +84,60 @@ class TimePrecision(enum.StrEnum):
     UNUSABLE = "unusable"
 
 
+# Field keys the *receiver* measures per decode rather than the device sending
+# them, so they differ between the repeats of one transmission (rtl_433 adds
+# them under ``report_meta level``). They are excluded from the payload identity
+# below: leaving them in would make every repeat look like a distinct payload
+# and defeat the repeat guard entirely on exactly the servers that enable them.
+VOLATILE_FIELD_KEYS: Final[frozenset[str]] = frozenset({"rssi", "snr", "noise", "freq"})
+
+#: A comparable stand-in for a frame's measurement payload, as returned by
+#: :func:`payload_identity`.
+type PayloadIdentity = tuple[tuple[str, str], ...]
+
+
+def payload_identity(fields: Mapping[str, Any]) -> PayloadIdentity:
+    """Reduce a frame's measurement fields to a comparable payload identity.
+
+    Two decodes of *one* transmission carry byte-identical device data, so their
+    identities are equal; a genuinely new transmission that changed something
+    (a contact opening, a button code) differs. :data:`VOLATILE_FIELD_KEYS` is
+    dropped first because those vary decode-to-decode on the same transmission.
+
+    Values are reduced with :func:`repr` rather than used directly: some rtl_433
+    payloads carry lists or dicts, which are unhashable and compare oddly, and
+    ``repr`` gives every value a stable, order-preserving textual form. Sorting
+    makes the result independent of key order.
+    """
+    return tuple(
+        sorted(
+            (key, repr(value))
+            for key, value in fields.items()
+            if key not in VOLATILE_FIELD_KEYS
+        )
+    )
+
+
+def _is_repeat(
+    payload: PayloadIdentity | None,
+    seen_payloads: Collection[PayloadIdentity] | None,
+) -> bool:
+    """Whether this payload was already seen at the high-water instant.
+
+    A *set* rather than just the previous payload, because repeats are not
+    always adjacent: a receiver decoding several devices interleaves them, so
+    the frame before a repeat is often some other transmission. Membership also
+    keeps a reconnect honest -- a replayed frame re-sent inside the
+    backlog-gate's grace window still matches something already seen at that
+    instant, where a last-payload-only check would let it re-fire.
+
+    ``None`` on either side means the caller supplied no payload information --
+    so the timestamp is all there is to go on, and the frame is treated as a
+    repeat exactly as this classifier did before payloads were considered.
+    """
+    return payload is None or seen_payloads is None or payload in seen_payloads
+
+
 @dataclasses.dataclass(frozen=True, slots=True)
 class ReplayVerdict:
     """How one event frame was classified against the reconnect replay.
@@ -108,6 +163,8 @@ def classify_replay(
     *,
     high_water: datetime | None,
     connection_time: datetime | None,
+    payload: PayloadIdentity | None = None,
+    seen_payloads: Collection[PayloadIdentity] | None = None,
 ) -> ReplayVerdict:
     """Classify an event frame as live / replay / stale gap / backlog.
 
@@ -117,6 +174,17 @@ def classify_replay(
     and the event age catches an unseen-but-old gap event. A third signal, the
     connection-time gate, marks a recent-but-pre-connection frame as replayed
     backlog (the restart re-delivery case).
+
+    ``payload`` / ``seen_payloads`` (from :func:`payload_identity`) qualify the
+    high-water test. rtl_433 stamps ``time`` at 1-second resolution unless the
+    server sets ``report_meta time:...usec...``, so at-or-below the mark does not
+    by itself mean "already seen": two distinct transmissions from one device
+    inside the same second carry the same stamp. Comparing payloads separates
+    the two cases -- a decoder's repeat burst is byte-identical, a real state
+    change is not. The exception is deliberately narrow -- it applies only to an
+    *equal* stamp, never a strictly older one, which is genuinely in the past
+    however its payload reads. Omitting both arguments restores the pure
+    timestamp behaviour.
 
     ``event_time is None`` (no usable timestamp) and ``connection_time is None``
     (disconnected, or a direct unit-test feed) both keep ``is_backlog`` False and
@@ -136,10 +204,28 @@ def classify_replay(
     if event_time is None:
         # No usable timestamp -> treat as live ("never drop a real one").
         return ReplayVerdict(False, False, "LIVE (no-timestamp)", None)
-    if high_water is not None and event_time <= high_water:
+    # Only an *equal* stamp is ambiguous. A strictly older one is genuinely in
+    # the past -- a re-sent buffer tail, or an out-of-order delivery -- and stays
+    # a replay whatever it carries. An equal one may be either a repeat of the
+    # transmission that set the mark or a second transmission inside the same
+    # stamp resolution, and only the payload separates those.
+    same_stamp_new_payload = (
+        high_water is not None
+        and event_time == high_water
+        and not _is_repeat(payload, seen_payloads)
+    )
+    if (
+        high_water is not None
+        and event_time <= high_water
+        and not same_stamp_new_payload
+    ):
         # At or below the high-water mark -> an already-seen replay (catches the
         # re-sent buffer tail on a brief blip; never re-fires). Leave the mark.
         return ReplayVerdict(True, is_backlog, "REPLAY (event_time<=high_water)", None)
+    # An equal stamp with a different payload falls through: suppressing it would
+    # drop a real state change (a contact opening then closing inside one
+    # second). The reconnect backlog is still caught below by the connection-time
+    # gate, which does not depend on the mark at all.
     if now - event_time > REPLAY_STALE_THRESHOLD:
         # Newer than the mark (never saw it) but old -> a stale gap event that
         # occurred while disconnected. Advance the mark so it is not reconsidered.
@@ -156,9 +242,12 @@ def classify_replay(
     # fall at-or-below it and be wrongly suppressed as a replay -- stalling
     # availability and silencing event entities until wall-clock caught up. The
     # frame still fires as live; only the mark is bounded.
-    return ReplayVerdict(
-        False, False, "LIVE (event_time>high_water)", min(event_time, now)
+    label = (
+        "LIVE (payload differs at same high_water stamp)"
+        if same_stamp_new_payload
+        else "LIVE (event_time>high_water)"
     )
+    return ReplayVerdict(False, False, label, min(event_time, now))
 
 
 # Plausibility window for a bare epoch-seconds ``time`` value

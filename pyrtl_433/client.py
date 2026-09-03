@@ -30,6 +30,7 @@ policy on top.
 from __future__ import annotations
 
 import asyncio
+from collections import OrderedDict
 from collections.abc import Callable
 import contextlib
 import dataclasses
@@ -44,7 +45,14 @@ import aiohttp
 from ._urls import build_cmd_url, build_ws_url, unwrap_result
 from .autolevel import AUTO_LEVEL_SRC, parse_auto_level
 from .normalizer import DEFAULT_SKIP_KEYS, NormalizedEvent, normalize
-from .replay import TimePrecision, classify_replay, parse_event_time, time_precision
+from .replay import (
+    PayloadIdentity,
+    TimePrecision,
+    classify_replay,
+    parse_event_time,
+    payload_identity,
+    time_precision,
+)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -64,6 +72,32 @@ _GETTER_TIMEOUT = 10.0
 # so the hub's SDR config and throughput stay live without depending on the
 # streaming socket.
 _REFRESH_INTERVAL = timedelta(seconds=60)
+
+# Hard cap on the per-device replay bookkeeping. "One entry per device the
+# receiver hears" is not self-limiting: 433 MHz produces spurious decodes with
+# arbitrary ids, and several real protocols roll their id on a battery change,
+# so an uncapped map grows for the life of the process. Evicting the
+# least-recently-heard device costs only that device's suppression state -- its
+# next frame is treated as live, the safe direction ("never drop a real one") --
+# and never affects the pre-connection backlog gate, which keys off
+# ``connection_time`` rather than this map. Sized far above the few dozen
+# devices a busy receiver actually hears.
+_MAX_TRACKED_DEVICES = 512
+
+
+@dataclasses.dataclass(slots=True)
+class _DeviceReplayState:
+    """One device's replay bookkeeping: its high-water mark and last payload.
+
+    Kept together in a single map so the two always evict as a unit; a mark
+    without its payloads would silently fall back to timestamp-only suppression.
+    """
+
+    high_water: datetime | None = None
+    #: Every payload seen *at* ``high_water``. ``None`` means nothing has been
+    #: recorded yet, which the classifier reads as "no payload information".
+    payloads: set[PayloadIdentity] | None = None
+
 
 # Identity keys (besides ``model``) that mark a frame as a decoded-device event.
 # Kept in sync with normalizer.IDENTITY_KEYS.
@@ -183,15 +217,17 @@ class Rtl433Client:
         # is logged once per command until it recovers (never floods on refresh).
         self._malformed_cmds: set[str] = set()
 
-        # Per-device high-water mark of the maximum event ``time`` (UTC) parsed
-        # for each ``device_key``, used to classify each frame against the
-        # reconnect replay. Spans reconnects so a brief blip's re-sent buffer tail
-        # is recognised as already-seen. Keyed per device because rtl_433 stamps
-        # ``time`` at 1-second resolution: a receiver hearing several sensors
-        # routinely sees two *different* devices in the same second, and one
-        # device's mark says nothing about whether another device's frame has
-        # already been seen.
-        self._event_high_water: dict[str, datetime] = {}
+        # Per-device replay bookkeeping (high-water mark + last payload), keyed
+        # by ``device_key`` and ordered least-recently-heard first so the cap
+        # evicts the coldest device. Spans reconnects so a brief blip's re-sent
+        # buffer tail is recognised as already-seen. Keyed per device because
+        # rtl_433 stamps ``time`` at 1-second resolution: a receiver hearing
+        # several sensors routinely sees two *different* devices in the same
+        # second, and one device's mark says nothing about whether another
+        # device's frame has already been seen. The payload rides alongside the
+        # mark because, at that same resolution, one device's own two
+        # transmissions inside a second are equally indistinguishable by time.
+        self._device_state: OrderedDict[str, _DeviceReplayState] = OrderedDict()
         # UTC time of the current successful connection (``None`` while
         # disconnected); anchors the pre-connection-backlog gate.
         self._connection_time: datetime | None = None
@@ -335,12 +371,13 @@ class Rtl433Client:
                     # ``_process_event`` is judged against these two values.
                     LOGGER.debug(
                         "pyrtl_433 connection anchor for %s: connected_at=%s "
-                        "replay_high_water tracked for %d device(s) (a frame at/"
-                        "below its own device's high-water, or before "
-                        "connected_at, is suppressed as a replay)",
+                        "replay state tracked for %d device(s) (a frame at/"
+                        "below its own device's high-water carrying that "
+                        "device's last payload, or one before connected_at, is "
+                        "suppressed as a replay)",
                         self.ws_url,
                         self._connection_time.isoformat(),
-                        len(self._event_high_water),
+                        len(self._device_state),
                     )
                     # Seed SDR/meta config, stats, and device identity over HTTP
                     # (never the socket). Each getter swallows its own failures, so
@@ -458,14 +495,17 @@ class Rtl433Client:
         raw_time = event.get("time")
         event_time = parse_event_time(raw_time, default_tz=self._event_tz)
         self._update_time_precision(raw_time)
+        state = self._device_state.get(normalized.device_key)
+        payload = payload_identity(normalized.fields)
         verdict = classify_replay(
             event_time,
             now,
-            high_water=self._event_high_water.get(normalized.device_key),
+            high_water=state.high_water if state is not None else None,
             connection_time=self._connection_time,
+            payload=payload,
+            seen_payloads=state.payloads if state is not None else None,
         )
-        if verdict.new_high_water is not None:
-            self._event_high_water[normalized.device_key] = verdict.new_high_water
+        self._remember_device(normalized.device_key, verdict.new_high_water, payload)
 
         # Carry the classification on the event object (the emission carrier).
         normalized = dataclasses.replace(
@@ -502,6 +542,36 @@ class Rtl433Client:
         )
         self.time_precision = precision
         self._invoke_callback(self._on_hub_update)
+
+    def _remember_device(
+        self,
+        device_key: str,
+        new_high_water: datetime | None,
+        payload: PayloadIdentity,
+    ) -> None:
+        """Record this frame against its device, evicting the coldest if capped.
+
+        The payload set belongs to a single instant, so it starts fresh whenever
+        the mark actually moves and accumulates while it does not -- which is
+        exactly the window in which two frames are indistinguishable by time.
+        Payloads are recorded for every frame, replay or not: an already-seen
+        frame confirms what this device sent at that instant just as a live one
+        does. The mark itself advances only when the verdict says so
+        (``new_high_water`` is ``None`` for an already-seen frame).
+        """
+        state = self._device_state.get(device_key)
+        if state is None:
+            state = _DeviceReplayState()
+            self._device_state[device_key] = state
+        if new_high_water is not None and new_high_water != state.high_water:
+            state.high_water = new_high_water
+            state.payloads = {payload}
+        else:
+            state.payloads = (state.payloads or set()) | {payload}
+        # Freshest last, so the cap below drops the least-recently-heard device.
+        self._device_state.move_to_end(device_key)
+        while len(self._device_state) > _MAX_TRACKED_DEVICES:
+            self._device_state.popitem(last=False)
 
     def _emit_event(self, normalized: NormalizedEvent) -> None:
         """Publish a normalized event to the queue and the ``on_event`` callback."""

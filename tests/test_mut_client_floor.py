@@ -23,7 +23,8 @@ import logging
 import aiohttp
 import pytest
 
-from pyrtl_433.client import CannotConnect, Rtl433Client
+from pyrtl_433 import client as client_module
+from pyrtl_433.client import CannotConnect, Rtl433Client, _DeviceReplayState
 from pyrtl_433.replay import TimePrecision
 
 HOST = "rtl433.local"
@@ -146,7 +147,7 @@ async def test_process_event_live_advances_high_water(make_client, fake_clock):
 
     assert seen[0].is_replay is False
     assert seen[0].event_time == now
-    assert client._event_high_water[_EVENT_KEY] == now
+    assert client._device_state[_EVENT_KEY].high_water == now
     # It also reached the async-iterator queue.
     assert client._queue.get_nowait() is seen[0]
 
@@ -157,12 +158,12 @@ async def test_process_event_replay_leaves_high_water(make_client, fake_clock):
     hw = datetime(2026, 5, 25, 10, 0, 0, tzinfo=UTC)
     seen = []
     client = make_client(on_event=seen.append)
-    client._event_high_water = {_EVENT_KEY: hw}
+    client._device_state[_EVENT_KEY] = _DeviceReplayState(high_water=hw)
 
     client._process_event(_event("2026-05-25T10:00:00Z"))  # == high water
 
     assert seen[0].is_replay is True
-    assert client._event_high_water[_EVENT_KEY] == hw  # unchanged
+    assert client._device_state[_EVENT_KEY].high_water == hw  # unchanged
 
 
 async def test_process_event_stale_gap_advances_high_water(make_client, fake_clock):
@@ -174,7 +175,7 @@ async def test_process_event_stale_gap_advances_high_water(make_client, fake_clo
     client._process_event(_event("2026-05-25T10:00:00Z"))
 
     assert seen[0].is_replay is True
-    assert client._event_high_water[_EVENT_KEY] == datetime(
+    assert client._device_state[_EVENT_KEY].high_water == datetime(
         2026, 5, 25, 10, 0, 0, tzinfo=UTC
     )
 
@@ -220,6 +221,83 @@ async def test_time_precision_unchanged_logs_nothing(make_client, caplog):
     assert not [r for r in caplog.records if "event time precision" in r.getMessage()]
 
 
+async def test_remember_device_keeps_the_mark_when_the_verdict_says_so(
+    make_client, fake_clock
+):
+    """A replay verdict updates the payload but must not move the mark.
+
+    ``new_high_water`` is ``None`` for an already-seen frame; writing it anyway
+    would let a replayed frame drag the mark backwards.
+    """
+    hw = datetime(2026, 5, 25, 10, 0, 0, tzinfo=UTC)
+    client = make_client()
+
+    client._remember_device(_EVENT_KEY, hw, (("temperature_C", "1.0"),))
+    client._remember_device(_EVENT_KEY, None, (("temperature_C", "2.0"),))
+
+    assert client._device_state[_EVENT_KEY].high_water == hw  # unmoved
+    # Both payloads are recorded: they were seen at the same instant, and the
+    # next frame is tested against all of them, not just the most recent.
+    assert client._device_state[_EVENT_KEY].payloads == {
+        (("temperature_C", "1.0"),),
+        (("temperature_C", "2.0"),),
+    }
+
+
+async def test_remember_device_restarts_the_payload_set_when_the_mark_moves(
+    make_client,
+):
+    """The payload set belongs to one instant, so a new mark starts it over.
+
+    Without the reset it would accumulate for the life of the device, and a
+    payload sent minutes ago would suppress an identical one sent now.
+    """
+    first = datetime(2026, 5, 25, 10, 0, 0, tzinfo=UTC)
+    second = datetime(2026, 5, 25, 10, 0, 1, tzinfo=UTC)
+    client = make_client()
+
+    client._remember_device(_EVENT_KEY, first, (("state", "'open'"),))
+    client._remember_device(_EVENT_KEY, second, (("state", "'closed'"),))
+
+    assert client._device_state[_EVENT_KEY].high_water == second
+    assert client._device_state[_EVENT_KEY].payloads == {(("state", "'closed'"),)}
+
+
+async def test_remember_device_evicts_the_least_recently_heard(
+    make_client, monkeypatch
+):
+    """At the cap the coldest device is dropped, and re-hearing one refreshes it.
+
+    Pins ``move_to_end`` (without it the map evicts by insertion order, dropping
+    a device that is still transmitting) and the ``popitem(last=False)``
+    direction (``last=True`` would drop the freshest instead).
+    """
+    monkeypatch.setattr(client_module, "_MAX_TRACKED_DEVICES", 2)
+    client = make_client()
+
+    client._remember_device("a", None, ())
+    client._remember_device("b", None, ())
+    # Re-hearing "a" makes "b" the coldest.
+    client._remember_device("a", None, ())
+    client._remember_device("c", None, ())
+
+    assert list(client._device_state) == ["a", "c"]
+
+
+# One mutant on ``_remember_device`` is genuinely EQUIVALENT and is recorded
+# here rather than forced: ``popitem(last=False)`` -> ``popitem(last=None)``.
+# ``OrderedDict.popitem`` tests ``last`` for truthiness, and ``None`` is falsy,
+# so both forms pop the *first* item. No input distinguishes them. The eviction
+# direction itself is pinned by
+# ``test_remember_device_evicts_the_least_recently_heard`` above, which does
+# kill ``last=True``.
+
+
+async def test_max_tracked_devices_is_the_documented_cap():
+    """Pin the cap's value: it is the memory bound this map promises."""
+    assert client_module._MAX_TRACKED_DEVICES == 512
+
+
 async def test_process_event_backlog_is_replay(make_client, fake_clock):
     """A recent frame stamped before this connection is a replayed backlog frame."""
     now = datetime(2026, 5, 25, 10, 0, 11, tzinfo=UTC)
@@ -231,7 +309,7 @@ async def test_process_event_backlog_is_replay(make_client, fake_clock):
     client._process_event(_event("2026-05-25T10:00:00Z"))
 
     assert seen[0].is_replay is True
-    assert client._event_high_water[_EVENT_KEY] == datetime(
+    assert client._device_state[_EVENT_KEY].high_water == datetime(
         2026, 5, 25, 10, 0, 0, tzinfo=UTC
     )
 
@@ -246,7 +324,9 @@ async def test_process_event_future_stamp_clamped_to_now(make_client, fake_clock
     client._process_event(_event("2026-05-25T11:00:00Z"))  # 1h in the future
 
     assert seen[0].is_replay is False
-    assert client._event_high_water[_EVENT_KEY] == now  # clamped, not the future stamp
+    assert (
+        client._device_state[_EVENT_KEY].high_water == now
+    )  # clamped, not the future stamp
 
 
 async def test_handle_text_frame_strips_whitespace_then_processes(
@@ -694,9 +774,10 @@ async def test_connect_loop_success_and_disconnect_logs(
     assert f"pyrtl_433 connected to {WS_URL}" in msgs
     assert (
         f"pyrtl_433 connection anchor for {WS_URL}: "
-        "connected_at=2026-05-25T10:00:00+00:00 replay_high_water tracked for "
-        "0 device(s) (a frame at/below its own device's high-water, or before "
-        "connected_at, is suppressed as a replay)"
+        "connected_at=2026-05-25T10:00:00+00:00 replay state tracked for "
+        "0 device(s) (a frame at/below its own device's high-water carrying "
+        "that device's last payload, or one before connected_at, is suppressed "
+        "as a replay)"
     ) in msgs
     assert f"pyrtl_433 disconnected from {WS_URL}; reconnecting in 1s" in msgs
 
