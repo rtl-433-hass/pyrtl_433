@@ -697,7 +697,7 @@ reports it; deciding whether to surface the server-side remedy (adding
 </tr>
 <tr>
 <td><code>replay.py</code></td>
-<td>Reconnect-replay classifier (<code>classify_replay</code>, <code>ReplayVerdict</code>), <code>parse_event_time</code> timestamp parsing, and <code>time_precision</code> / <code>TimePrecision</code> stamp-resolution reporting.</td>
+<td>Reconnect-replay classifier (<code>classify_replay</code>, <code>ReplayVerdict</code>), <code>parse_event_time</code> timestamp parsing, <code>payload_identity</code> — the per-decode-noise-free payload comparison that separates a repeated transmission from a new one sharing its timestamp — and <code>time_precision</code> / <code>TimePrecision</code> stamp-resolution reporting.</td>
 </tr>
 <tr>
 <td><code>sdr.py</code></td>
