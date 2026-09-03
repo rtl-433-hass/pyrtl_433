@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.4.0](https://github.com/rtl-433-hass/pyrtl_433/compare/v0.3.0...v0.4.0) (2026-09-03)
+
+
+### Features
+
+* **replay:** report the server's event time resolution ([#40](https://github.com/rtl-433-hass/pyrtl_433/issues/40)) ([dfc9390](https://github.com/rtl-433-hass/pyrtl_433/commit/dfc93907d8f0e725fa027b684e3abdad17f6722e))
+
+
+### Bug Fixes
+
+* **replay:** parse epoch-seconds timestamps (report_meta time:unix) ([#39](https://github.com/rtl-433-hass/pyrtl_433/issues/39)) ([fedb277](https://github.com/rtl-433-hass/pyrtl_433/commit/fedb27783fe3bb84222f82532aa998d0aa8997bb))
+* **replay:** separate a repeated transmission from a new one sharing its stamp ([#41](https://github.com/rtl-433-hass/pyrtl_433/issues/41)) ([ff20bd9](https://github.com/rtl-433-hass/pyrtl_433/commit/ff20bd92786a75f9930339c8014181fb50aa8eae))
+
 ## [0.3.0](https://github.com/rtl-433-hass/pyrtl_433/compare/v0.2.0...v0.3.0) (2026-09-02)
 
 
