@@ -640,6 +640,40 @@
 <code>client.meta</code>, <code>client.stats</code>, <code>client.dev_info</code>, <code>client.dev_query</code>. Refresh
 them on demand with <code>await client.refresh_meta()</code> / <code>refresh_stats()</code> /
 <code>refresh_dev_info()</code>.</p>
+<p><code>client.time_precision</code> reports the resolution of the server's event <code>time</code>
+stamps, observed from the frames themselves (<code>get_meta</code> carries no timestamp
+format, so there is nothing to ask). It is <code>None</code> until the first event frame,
+then one of:</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Server config</th>
+<th>What it means for the consumer</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>TimePrecision.MICROSECOND</code></td>
+<td><code>report_meta time:...usec...</code></td>
+<td>Two transmissions from one device are always distinguishable.</td>
+</tr>
+<tr>
+<td><code>TimePrecision.SECOND</code></td>
+<td>rtl_433's default</td>
+<td>Two transmissions from one device inside the same wall-clock second carry identical stamps and cannot be told apart by time alone.</td>
+</tr>
+<tr>
+<td><code>TimePrecision.UNUSABLE</code></td>
+<td><code>report_meta time:off</code>, or a form this parser does not accept</td>
+<td>No frame has a usable timestamp, so replay suppression is off entirely — the server's reconnect backlog re-fires in full.</td>
+</tr>
+</tbody>
+</table>
+<p>It is latest-wins, so it clears on the next frame after an operator changes the
+server's config, and <code>on_hub_update</code> fires whenever it changes. The library only
+reports it; deciding whether to surface the server-side remedy (adding
+<code>report_meta time:iso:usec:tz</code>) is the consumer's call.</p>
 <h2 id="module-map">Module map<a class="headerlink" href="#module-map" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
@@ -663,7 +697,7 @@ them on demand with <code>await client.refresh_meta()</code> / <code>refresh_sta
 </tr>
 <tr>
 <td><code>replay.py</code></td>
-<td>Reconnect-replay classifier (<code>classify_replay</code>, <code>ReplayVerdict</code>) and <code>parse_event_time</code> timestamp parsing.</td>
+<td>Reconnect-replay classifier (<code>classify_replay</code>, <code>ReplayVerdict</code>), <code>parse_event_time</code> timestamp parsing, and <code>time_precision</code> / <code>TimePrecision</code> stamp-resolution reporting.</td>
 </tr>
 <tr>
 <td><code>sdr.py</code></td>
