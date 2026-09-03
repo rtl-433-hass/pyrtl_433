@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+    <url>
+         <loc>https://rtl-433-hass.github.io/pyrtl_433/0.4/</loc>
+         <lastmod>2026-09-03</lastmod>
+    </url>
+    <url>
+         <loc>https://rtl-433-hass.github.io/pyrtl_433/0.4/api-reference/</loc>
+         <lastmod>2026-09-03</lastmod>
+    </url>
+    <url>
+         <loc>https://rtl-433-hass.github.io/pyrtl_433/0.4/development/</loc>
+         <lastmod>2026-09-03</lastmod>
+    </url>
+    <url>
+         <loc>https://rtl-433-hass.github.io/pyrtl_433/0.4/device-library/</loc>
+         <lastmod>2026-09-03</lastmod>
+    </url>
+    <url>
+         <loc>https://rtl-433-hass.github.io/pyrtl_433/0.4/protocol-reference/</loc>
+         <lastmod>2026-09-03</lastmod>
+    </url>
+    <url>
+         <loc>https://rtl-433-hass.github.io/pyrtl_433/0.4/quickstart/</loc>
+         <lastmod>2026-09-03</lastmod>
+    </url>
+</urlset>
