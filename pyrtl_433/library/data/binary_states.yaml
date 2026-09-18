@@ -1,35 +1,76 @@
 # Binary state field mappings (contacts, tamper, alarm, battery).
 #
-# Ported from the upstream rtl_433 example `rtl_433_mqtt_hass.py` `mappings`
-# table. See docs/device-library.md for the schema reference.
+# Derived from the upstream rtl_433 example `rtl_433_mqtt_hass.py` `mappings`
+# table; the security-sensor loop fields deliberately diverge from it (see the
+# block comment below). See docs/device-library.md for the schema reference.
 #
 # `payload` maps the rtl_433 raw value to Home Assistant on/off. For most
 # fields 1 == on; `closed` is inverted upstream (0 == open).
 
+# --- Honeywell / 2GIG / Vivint security-sensor loop bits ---------------------
+#
+# `contact_open`, `reed_open`, `alarm` and `tamper` are four bits of the
+# Honeywell 5800 `event` byte (`CTRABHUU` in rtl_433's honeywell.c); the Vivint
+# decoder emits the same set. Upstream marks all four `entity_category:
+# diagnostic` with `device_class: safety`. We keep that only for `tamper`.
+#
+# Provenance of the upstream values:
+#
+#   * `tamper` / `alarm` were added with `device_class: safety` in PR #1357
+#     (2020), and given `entity_category: diagnostic` in PR #1952 (2022), whose
+#     stated rule was to categorize "the NON-PRIMARY entities".
+#   * `contact_open` / `reed_open` arrived two years later in PR #2881 (2024),
+#     copy-pasted from the adjacent `tamper` block. The category and the safety
+#     class came along with the paste; neither is mentioned anywhere in that PR.
+#
+# On these devices the loop bits ARE the primary entity, so the inherited
+# category contradicts the rule that introduced it. Which loop is live is an
+# installer choice per physical sensor (loop 1 = contact, loop 2 = reed,
+# loop 3 = alarm, loop 4 = tamper) and one sensor can cover several zones, so a
+# door, window, PIR or tilt sensor may report on any of them -- a device whose
+# live loop is categorized diagnostic ends up with no primary entity at all.
+#
+# `device_class: opening` rather than `safety` because a contact reads
+# Open/Closed, not Unsafe/Safe. The default also decides what a user sees when
+# retyping: Home Assistant's entity-settings "Shown as" picker lists the group
+# holding the shipped class first, so `opening` puts window / door /
+# garage_door at the top and keeps motion / occupancy one divider below.
+# `entity_category`, by contrast, is not editable anywhere in that UI, so a
+# wrong default there is not something a user can correct.
+#
+#   PR #1357:  https://github.com/merbanan/rtl_433/pull/1357
+#   PR #1952:  https://github.com/merbanan/rtl_433/pull/1952
+#   PR #2881:  https://github.com/merbanan/rtl_433/pull/2881
+#   Loop map:  https://github.com/merbanan/rtl_433/pull/2881#issuecomment-2028497556
+#
+# `name` stays explicit on both contacts: a Honeywell device emits `reed_open`
+# and `contact_open` together, and deriving both names from the shared
+# `opening` device class would render two identically named entities.
+
 reed_open:
   platform: binary_sensor
-  device_class: safety
+  device_class: opening
   unit_of_measurement: null
   state_class: null
   name: Reed open
   payload: { on: "1", off: "0" }
   force_update: true
-  entity_category: diagnostic
   object_suffix: reed_open
   event_driven: true
 
 contact_open:
   platform: binary_sensor
-  device_class: safety
+  device_class: opening
   unit_of_measurement: null
   state_class: null
   name: Contact open
   payload: { on: "1", off: "0" }
   force_update: true
-  entity_category: diagnostic
   object_suffix: contact_open
   event_driven: true
 
+# Loop 4. Genuinely non-primary on every decoder that emits it, so this one
+# keeps upstream's diagnostic category -- the case PR #1952 was written for.
 tamper:
   platform: binary_sensor
   device_class: safety
@@ -41,6 +82,9 @@ tamper:
   entity_category: diagnostic
   object_suffix: tamper
 
+# Loop 3 on the 5800 family (tilt, low temperature, ...), but the primary
+# signal on unrelated decoders, so it is not categorized diagnostic. Unlike the
+# contact loops it has no better generic fit than `safety`.
 alarm:
   platform: binary_sensor
   device_class: safety
@@ -49,7 +93,6 @@ alarm:
   name: Alarm
   payload: { on: "1", off: "0" }
   force_update: true
-  entity_category: diagnostic
   object_suffix: alarm
   event_driven: true
 

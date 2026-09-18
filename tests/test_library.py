@@ -171,6 +171,32 @@ def test_existing_fields_keep_original_platform(library):
     assert lookup("tamper", registry=registry).platform == "binary_sensor"
 
 
+def test_security_loop_bits_are_primary_entities(library):
+    """The Honeywell/Vivint loop contacts are primary entities, not diagnostics.
+
+    Upstream's ``rtl_433_mqtt_hass.py`` marks ``contact_open``/``reed_open``
+    ``entity_category: diagnostic`` with ``device_class: safety``, inherited by
+    copy-paste from the adjacent ``tamper`` block in merbanan/rtl_433#2881. On a
+    Honeywell 5800 device these bits *are* the primary entity, so the library
+    diverges; see the block comment in ``data/binary_states.yaml``. Pinned here
+    so a future re-sync with the upstream table cannot silently revert it.
+    """
+    registry, _ = library
+
+    for field_key in ("contact_open", "reed_open"):
+        descriptor = lookup(field_key, registry=registry)
+        assert descriptor.entity_category is None, field_key
+        assert descriptor.device_class == "opening", field_key
+        # Both are emitted by the same device, so neither may derive its name
+        # from the shared device class.
+        assert descriptor.name is not None, field_key
+
+    # `alarm` is loop 3 here but the primary signal on other decoders.
+    assert lookup("alarm", registry=registry).entity_category is None
+    # `tamper` is non-primary everywhere and keeps the upstream category.
+    assert lookup("tamper", registry=registry).entity_category == "diagnostic"
+
+
 def test_event_driven_flag_parsed_from_library(library):
     """The ``event_driven`` flag is parsed onto the relevant binary descriptors."""
     registry, _ = library
