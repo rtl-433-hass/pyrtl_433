@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.1](https://github.com/rtl-433-hass/pyrtl_433/compare/v0.4.0...v0.4.1) (2026-09-21)
+
+
+### Bug Fixes
+
+* **library:** make security-sensor loop contacts primary entities ([#49](https://github.com/rtl-433-hass/pyrtl_433/issues/49)) ([bee33a7](https://github.com/rtl-433-hass/pyrtl_433/commit/bee33a783bf86ef249d6c4767fa833fb4195249e))
+
 ## [0.4.0](https://github.com/rtl-433-hass/pyrtl_433/compare/v0.3.0...v0.4.0) (2026-09-03)
 
 
