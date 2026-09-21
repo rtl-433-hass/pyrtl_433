@@ -18,11 +18,17 @@ Its descriptor vocabulary (`platform`, `device_class`, `state_class`,
 vocabulary, so a Home Assistant consumer maps it 1:1 — but nothing here imports
 Home Assistant, and any consumer can read the same fields.
 
-> The shipped library is a faithful port of the curated `mappings` table and
-> `SKIP_KEYS` from rtl_433's own
-> [`examples/rtl_433_mqtt_hass.py`](https://github.com/merbanan/rtl_433/blob/90621a8cb56c79b766077cadce4dc37bc613c54c/examples/rtl_433_mqtt_hass.py).
-> The mapping *semantics* (device class, unit, state class, value transform,
-> unique-id suffix) are reused; the MQTT transport is discarded.
+> The shipped library started from the curated `mappings` table and `SKIP_KEYS`
+> in rtl_433's own
+> [`examples/rtl_433_mqtt_hass.py`](https://github.com/merbanan/rtl_433/blob/90621a8cb56c79b766077cadce4dc37bc613c54c/examples/rtl_433_mqtt_hass.py):
+> the mapping *semantics* (device class, unit, state class, value transform,
+> unique-id suffix) are reused and the MQTT transport is discarded.
+>
+> It is not kept in lockstep with that table. Where an upstream value is wrong
+> for real hardware the library diverges deliberately, and the reasoning is
+> recorded in a comment next to the field in `data/*.yaml` — see the
+> security-sensor loop bits in `binary_states.yaml` for a worked example. Treat
+> the upstream table as the starting point, not as the specification.
 
 ## Consuming it from Python
 
@@ -390,6 +396,29 @@ global entry.
 > scale would silently corrupt real energy data. The example above is purely
 > illustrative.
 
+### Granularity floor: model, not device
+
+`model` is the most specific scope the library has. There is no per-device level,
+and for some decoders the model string is coarser than the hardware it covers: a
+Honeywell 5800 door sensor, window sensor, PIR and tilt sensor all report
+`model: "Honeywell-Security"` and differ only by `channel` and by which loop bit
+the installer wired — and `channel` is a device-identity key in
+`_skip_keys.yaml`, not an override scope.
+
+So a `models:` entry for such a family applies to every physical unit of it. When
+a field's correct descriptor genuinely varies per unit, the library cannot
+express it, and the shipped default should be the one that is right for the
+common case and cheapest for a user to correct downstream.
+
+What "cheapest to correct" means depends on the attribute, because consumers do
+not expose them equally. In Home Assistant, `device_class` is editable per entity
+from the entity settings *Shown as* menu and persists in the entity registry, so
+a wrong default costs a user two clicks. `entity_category` is not editable there
+at all — a field categorized `diagnostic` that is actually a device's primary
+entity cannot be recategorized by the person running it. Weight the two
+accordingly when choosing a default: see the security-sensor loop bits in
+`binary_states.yaml` for the worked case.
+
 ## The skip-keys file
 
 `_skip_keys.yaml` lists fields that must never produce an entity — device
@@ -553,5 +582,3 @@ entities. These have no `sensor` / `binary_sensor` equivalent in this schema:
 - `channel` is already a device-identity key and lives in `_skip_keys.yaml`.
 - `button` is modelled as an [event entity](#event-entities) instead — see
   `events.yaml`.
-
-Everything else from the upstream table is ported faithfully.
