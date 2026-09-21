@@ -553,6 +553,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#granularity-floor-model-not-device" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Granularity floor: model, not device
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -852,6 +863,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#granularity-floor-model-not-device" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Granularity floor: model, not device
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -950,11 +972,16 @@ questions and stops there:</p>
 vocabulary, so a Home Assistant consumer maps it 1:1 — but nothing here imports
 Home Assistant, and any consumer can read the same fields.</p>
 <blockquote>
-<p>The shipped library is a faithful port of the curated <code>mappings</code> table and
-<code>SKIP_KEYS</code> from rtl_433's own
-<a href="https://github.com/merbanan/rtl_433/blob/90621a8cb56c79b766077cadce4dc37bc613c54c/examples/rtl_433_mqtt_hass.py"><code>examples/rtl_433_mqtt_hass.py</code></a>.
-The mapping <em>semantics</em> (device class, unit, state class, value transform,
-unique-id suffix) are reused; the MQTT transport is discarded.</p>
+<p>The shipped library started from the curated <code>mappings</code> table and <code>SKIP_KEYS</code>
+in rtl_433's own
+<a href="https://github.com/merbanan/rtl_433/blob/90621a8cb56c79b766077cadce4dc37bc613c54c/examples/rtl_433_mqtt_hass.py"><code>examples/rtl_433_mqtt_hass.py</code></a>:
+the mapping <em>semantics</em> (device class, unit, state class, value transform,
+unique-id suffix) are reused and the MQTT transport is discarded.</p>
+<p>It is not kept in lockstep with that table. Where an upstream value is wrong
+for real hardware the library diverges deliberately, and the reasoning is
+recorded in a comment next to the field in <code>data/*.yaml</code> — see the
+security-sensor loop bits in <code>binary_states.yaml</code> for a worked example. Treat
+the upstream table as the starting point, not as the specification.</p>
 </blockquote>
 <h2 id="consuming-it-from-python">Consuming it from Python<a class="headerlink" href="#consuming-it-from-python" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">pyrtl_433</span><span class="w"> </span><span class="kn">import</span> <span class="n">normalize</span>
@@ -1361,6 +1388,25 @@ carry a guessed <code>models:</code> consumption mapping for any real model — 
 scale would silently corrupt real energy data. The example above is purely
 illustrative.</p>
 </blockquote>
+<h3 id="granularity-floor-model-not-device">Granularity floor: model, not device<a class="headerlink" href="#granularity-floor-model-not-device" title="Permanent link">&para;</a></h3>
+<p><code>model</code> is the most specific scope the library has. There is no per-device level,
+and for some decoders the model string is coarser than the hardware it covers: a
+Honeywell 5800 door sensor, window sensor, PIR and tilt sensor all report
+<code>model: "Honeywell-Security"</code> and differ only by <code>channel</code> and by which loop bit
+the installer wired — and <code>channel</code> is a device-identity key in
+<code>_skip_keys.yaml</code>, not an override scope.</p>
+<p>So a <code>models:</code> entry for such a family applies to every physical unit of it. When
+a field's correct descriptor genuinely varies per unit, the library cannot
+express it, and the shipped default should be the one that is right for the
+common case and cheapest for a user to correct downstream.</p>
+<p>What "cheapest to correct" means depends on the attribute, because consumers do
+not expose them equally. In Home Assistant, <code>device_class</code> is editable per entity
+from the entity settings <em>Shown as</em> menu and persists in the entity registry, so
+a wrong default costs a user two clicks. <code>entity_category</code> is not editable there
+at all — a field categorized <code>diagnostic</code> that is actually a device's primary
+entity cannot be recategorized by the person running it. Weight the two
+accordingly when choosing a default: see the security-sensor loop bits in
+<code>binary_states.yaml</code> for the worked case.</p>
 <h2 id="the-skip-keys-file">The skip-keys file<a class="headerlink" href="#the-skip-keys-file" title="Permanent link">&para;</a></h2>
 <p><code>_skip_keys.yaml</code> lists fields that must never produce an entity — device
 identity (<code>model</code>, <code>id</code>, <code>channel</code>, <code>subtype</code>, <code>type</code>, and SCMplus's duplicate
@@ -1510,7 +1556,6 @@ entities. These have no <code>sensor</code> / <code>binary_sensor</code> equival
 <li><code>button</code> is modelled as an <a href="#event-entities">event entity</a> instead — see
   <code>events.yaml</code>.</li>
 </ul>
-<p>Everything else from the upstream table is ported faithfully.</p>
 
 
 
