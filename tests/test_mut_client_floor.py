@@ -32,6 +32,20 @@ CMD_URL = "http://rtl433.local:8433/cmd"
 WS_URL = "ws://rtl433.local:8433/ws"
 
 
+@pytest.mark.parametrize("frame", [{"msg": "status"}, {"lvl": 4}])
+async def test_incomplete_log_frame_is_not_forwarded(make_client, frame):
+    """Both log shape keys are required before notifying log consumers."""
+    logs = []
+    client = make_client(on_log=logs.append)
+
+    client._handle_text_frame(json.dumps(frame))
+    assert logs == []
+
+    complete = {"msg": "status", "lvl": 4}
+    client._handle_text_frame(json.dumps(complete))
+    assert logs == [complete]
+
+
 # --------------------------------------------------------------------------- #
 # Reconnect backoff: doubles 1->2->...->60 and caps at 60; resets on success   #
 # --------------------------------------------------------------------------- #
