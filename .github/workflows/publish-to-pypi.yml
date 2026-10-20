@@ -14,7 +14,7 @@ jobs:
 
   build:
     needs: ci
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     permissions:
       contents: read
     steps:
@@ -41,7 +41,7 @@ jobs:
   publish-to-testpypi:
     needs: build
     if: github.event_name == 'push'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     environment: testpypi
     permissions:
       id-token: write
@@ -57,7 +57,7 @@ jobs:
   publish-to-pypi:
     needs: build
     if: github.event_name == 'release'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     environment: pypi
     permissions:
       id-token: write
