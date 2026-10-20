@@ -80,3 +80,21 @@ for the callback style, the full constructor signature, and SDR `/cmd` writes.
 Apache-2.0. This library was extracted from the transport/protocol code and the
 device-mapping library of the rtl-433-hass/rtl_433 Home Assistant integration. See [`LICENSE`](LICENSE) and
 [`NOTICE`](NOTICE) for the source modules and attribution.
+
+## Pull request documentation previews
+
+Netlify builds the documentation using `netlify.toml` and publishes `site/`.
+The build uses Python 3.14 and `docs/requirements.txt`, then runs
+`mkdocs build --strict` from the repository root. The preview opens the branch's
+current documentation directly, without the published version directories.
+
+To enable previews, create a Netlify project by importing this GitHub repository,
+select `main` as the production branch, and keep Deploy Previews enabled for pull
+requests. Netlify reads the build settings from `netlify.toml` once it is merged.
+Each PR gets a URL such as `https://deploy-preview-123--your-project.netlify.app`.
+No additional GitHub Actions workflow or Netlify API token is required.
+The existing GitHub Pages workflow continues to publish the versioned docs;
+Netlify also publishes `main` at its own `netlify.app` URL.
+
+See Netlify's [repository setup guide](https://docs.netlify.com/start/quickstarts/deploy-from-repository/)
+and [Deploy Preview documentation](https://docs.netlify.com/deploy/deploy-types/deploy-previews/).
