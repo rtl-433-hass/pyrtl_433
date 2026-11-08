@@ -23,6 +23,7 @@ from pyrtl_433.library import (
     should_skip,
     validate_user_mappings,
 )
+from pyrtl_433.normalizer import normalize
 
 
 @pytest.fixture(scope="module")
@@ -885,6 +886,7 @@ def test_load_library_defaults_to_the_packaged_data_directory(library):
         "power_electrical.yaml",
         "pressure.yaml",
         "rain.yaml",
+        "security.yaml",
         "temperature.yaml",
         "wind.yaml",
     ]
@@ -917,8 +919,172 @@ def test_load_library_defaults_to_the_packaged_data_directory(library):
         "mod",
         "model",
         "protocol",
+        "raw_message",
         "raw_msg",
         "sequence_num",
         "subtype",
         "type",
     }
+
+
+# --------------------------------------------------------------------------- #
+# Security decoders: Kerui, Interlogix, Yale HSA (data/security.yaml).         #
+# Emitted values are from rtl_433 a1794a042eef0d723c298ec95139687cb61f3e06.    #
+# --------------------------------------------------------------------------- #
+
+
+def test_kerui_opened_is_a_two_state_contact(library):
+    """Kerui emits ``opened`` = 1 on cmd 0xe and ``opened`` = 0 on cmd 0x7."""
+    registry, _ = library
+
+    opened = lookup("opened", "Kerui-Security", registry=registry)
+    assert opened is not None
+    assert opened.platform == "binary_sensor"
+    assert opened.device_class == "opening"
+    assert opened.object_suffix == "opened"
+    assert opened.event_driven is True
+    assert opened.clear_delay is None
+    assert apply_transform(opened, 1) is True
+    assert apply_transform(opened, 0) is False
+    # Global: Kerui is its only emitter, so any model resolves the same entry.
+    assert lookup("opened", registry=registry) is opened
+
+
+def test_kerui_water_is_detect_only_and_model_scoped(library):
+    """``water`` is only ever emitted as 1, so the off is synthesized."""
+    registry, _ = library
+
+    water = lookup("water", "Kerui-Security", registry=registry)
+    assert water is not None
+    assert water.platform == "binary_sensor"
+    assert water.device_class == "moisture"
+    assert water.payload == {"on": "1"}
+    assert water.clear_delay == 90
+    assert water.object_suffix == "water"
+    assert apply_transform(water, 1) is True
+    assert apply_transform(water, 0) is None
+    # Vaillant emits "ON"/"off" and Acurite a 0/1 probe reading under the same
+    # key, so there must be no global entry for them to fall back to.
+    assert lookup("water", registry=registry) is None
+    assert lookup("water", "Vaillant-VRT340f", registry=registry) is None
+
+
+def test_kerui_command_fields_are_diagnostics(library):
+    """``state`` / ``cmd`` describe the command; neither leaks globally."""
+    registry, _ = library
+
+    state = lookup("state", "Kerui-Security", registry=registry)
+    assert state.platform == "sensor"
+    assert state.name == "Last command"
+    assert state.entity_category == "diagnostic"
+    assert state.enabled_by_default is True
+    assert state.force_update is True
+    assert apply_transform(state, "tamper") == "tamper"
+
+    cmd = lookup("cmd", "Kerui-Security", registry=registry)
+    assert cmd.platform == "sensor"
+    assert cmd.entity_category == "diagnostic"
+    assert cmd.enabled_by_default is False
+    assert apply_transform(cmd, 14) == 14
+
+    # Generic names: other decoders' `state` / `cmd` stay unmapped.
+    for field_key in ("state", "cmd"):
+        assert lookup(field_key, registry=registry) is None, field_key
+        assert lookup(field_key, "Honeywell-Security", registry=registry) is None
+
+
+def test_kerui_detect_only_globals_still_resolve(library):
+    """Kerui's other conditional fields fall through to the global entries."""
+    registry, _ = library
+
+    for field_key in ("motion", "tamper", "battery_ok"):
+        assert lookup(field_key, "Kerui-Security", registry=registry) is lookup(
+            field_key, registry=registry
+        ), field_key
+
+
+@pytest.mark.parametrize("n", [1, 2, 3, 4, 5])
+def test_interlogix_switches_are_text_sensors(library, n):
+    """Latch polarity varies by subtype, so ``switchN`` passes the string through."""
+    registry, _ = library
+    field_key = f"switch{n}"
+
+    switch = lookup(field_key, "Interlogix-Security", registry=registry)
+    assert switch is not None
+    assert switch.platform == "sensor"
+    assert switch.device_class is None
+    assert switch.entity_category is None
+    assert switch.enabled_by_default is True
+    assert switch.payload is None
+    assert switch.name == f"Switch {n}"
+    assert switch.object_suffix == field_key
+    assert apply_transform(switch, "OPEN") == "OPEN"
+    assert apply_transform(switch, "CLOSED") == "CLOSED"
+    assert lookup(field_key, registry=registry) is None
+
+
+def test_interlogix_raw_message_and_subtype_are_not_entities(library):
+    """``raw_message`` is transport noise; ``subtype`` is device identity."""
+    _, skip_keys = library
+    event = {
+        "model": "Interlogix-Security",
+        "subtype": "contact",
+        "id": "a7106d",
+        "switch1": "OPEN",
+        "raw_message": "cd15b8",
+    }
+
+    normalized = normalize(event, skip_keys)
+    assert normalized.device_key == "Interlogix-Security-a7106d-stcontact"
+    assert set(normalized.fields) == {"switch1"}
+
+
+def test_yale_hsa_fields_are_raw_sensors(library):
+    """The Yale bytes are guessed upstream, so they ship as raw int sensors."""
+    registry, _ = library
+
+    event = lookup("event", "Yale-HSA", registry=registry)
+    assert event.platform == "sensor"
+    assert event.name == "Last event"
+    assert event.entity_category is None
+    assert event.force_update is True
+    assert apply_transform(event, 1) == 1
+
+    state = lookup("state", "Yale-HSA", registry=registry)
+    assert state.entity_category == "diagnostic"
+    assert state.enabled_by_default is True
+
+    stype = lookup("stype", "Yale-HSA", registry=registry)
+    assert stype.entity_category == "diagnostic"
+    assert stype.enabled_by_default is False
+
+    # Honeywell's `event` is its loop byte; no global entry may catch it.
+    for field_key in ("event", "stype"):
+        assert lookup(field_key, registry=registry) is None, field_key
+
+
+def test_generic_security_fields_do_not_mark_devices_event_driven(library):
+    """Event-driven classification is per field key, with no model.
+
+    A model-scoped ``event_driven`` / ``platform: event`` entry on a generic key
+    would pin every other emitter of that key (TPMS ``state``, Acurite and
+    Vaillant ``water``, Govee ``event``) to never-expire. Only ``opened``, whose
+    sole emitter is Kerui, may join the set.
+    """
+    registry, _ = library
+    keys = event_driven_field_keys(registry)
+
+    assert "opened" in keys
+    for field_key in (
+        "water",
+        "state",
+        "cmd",
+        "event",
+        "stype",
+        "switch1",
+        "switch2",
+        "switch3",
+        "switch4",
+        "switch5",
+    ):
+        assert field_key not in keys, field_key

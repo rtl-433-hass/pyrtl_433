@@ -1,0 +1,180 @@
+# Model-scoped mappings for security decoders that emit generic field names.
+#
+# Every field here is keyed under `models:` rather than globally, because the
+# same field name means something different in another decoder (`state` has 17
+# emitters in src/devices, `event` 10, `water` 3, `cmd` 4) or because the value
+# only has meaning for this one protocol. Source references are pinned to
+# rtl_433 commit a1794a042eef0d723c298ec95139687cb61f3e06.
+#
+# Availability caveat -- why nothing below is `event_driven` or
+# `platform: event`:
+#
+#   `event_driven_field_keys()` returns bare field keys and
+#   `availability.is_event_driven()` matches on them with no model, so a
+#   model-scoped `event_driven: true` (or `platform: event`) entry marks the
+#   field event-driven for EVERY model that emits it. Marking Kerui's `water`
+#   that way would pin the periodic Acurite-00275rm/00276rm and Vaillant
+#   VRT340f to never-expire; Kerui `state` or Yale `event` would do the same to
+#   TPMS sensors, the Honeywell CM921 thermostat, Govee sensors and others.
+#   A silently stale entity is worse than one that goes unavailable between
+#   transmissions, so these fields stay periodic until classification is
+#   model-aware. Kerui contacts and PIRs are still event-driven through the
+#   global `opened` / `motion` entries.
+
+models:
+  # --- Kerui PIR / contact / water sensor ------------------------------------
+  # https://github.com/merbanan/rtl_433/blob/a1794a042eef0d723c298ec95139687cb61f3e06/src/devices/kerui.c#L61-L86
+  #
+  # Each transmission carries one 4-bit command. `cmd` is that code, `state`
+  # its name, and exactly one of motion / opened / tamper / water / battery_ok
+  # is added under DATA_COND. `opened` (global, binary_states.yaml), `motion`,
+  # `tamper` and `battery_ok` resolve to their global entries.
+  Kerui-Security:
+    # Leak sensor (e.g. WD51): cmd 0x5 emits `water` = 1 and nothing ever emits
+    # 0, so this is detect-only like `motion` and the off is synthesized.
+    # Global `water` is not safe: Vaillant VRT340f emits "ON"/"off" for
+    # pre-heated water, and Acurite 00275rm/00276rm a 0/1 probe reading.
+    water:
+      platform: binary_sensor
+      device_class: moisture
+      unit_of_measurement: null
+      state_class: null
+      name: null
+      payload: { on: "1" }   # detect-only: no off token
+      clear_delay: 90
+      object_suffix: water
+
+    # Command name: "motion" | "open" | "close" | "tamper" | "water" |
+    # "battery". The only entity that records a tamper or low-battery report as
+    # a distinct, timestamped occurrence (both of those are detect-only too).
+    state:
+      platform: sensor
+      device_class: null
+      unit_of_measurement: null
+      state_class: null
+      name: Last command
+      force_update: true
+      entity_category: diagnostic
+      object_suffix: state
+
+    # The raw 4-bit command code behind `state` (JSON emits it as a decimal
+    # int; the decoder's "0x%x" format applies only to text output).
+    cmd:
+      platform: sensor
+      device_class: null
+      unit_of_measurement: null
+      state_class: null
+      name: Command code
+      entity_category: diagnostic
+      enabled_by_default: false
+      object_suffix: cmd
+
+  # --- Interlogix / GE / UTC ---------------------------------------------------
+  # https://github.com/merbanan/rtl_433/blob/a1794a042eef0d723c298ec95139687cb61f3e06/src/devices/interlogix.c#L196-L224
+  #
+  # `switch1`..`switch5` are the five latch inputs F1..F5, each the string
+  # "OPEN" or "CLOSED". What a latch means, and which string is the idle one,
+  # depends on `subtype`, and decoding the rtl_433_tests captures shows it:
+  #
+  #   contact: switch1 flips OPEN/CLOSED with the contact; the unused
+  #            switch2/4/5 read "OPEN" permanently.
+  #   motion:  switch3 reads "OPEN" on the tamper captures; the motion capture
+  #            and the idle status report have identical switch values.
+  #   smoke:   the status report reads "CLOSED" on switch2..5; an alarm reads
+  #            "CLOSED" on switch4/5 and "OPEN" on switch1..3.
+  #   keyfob:  the decoder synthesizes "CLOSED" on the one pressed button and
+  #            "OPEN" on the others, from the trigger-count bits.
+  #
+  # So no single on/off polarity or device class is right across subtypes, and
+  # the library cannot scope by subtype (the model is its narrowest scope).
+  # They ship as plain text sensors carrying the decoder's own string, with no
+  # device class and no category, so the live latch on any subtype stays a
+  # visible primary entity and a user can retype or template it per device.
+  #
+  # `subtype` is an identity key (already part of the device key), and
+  # `raw_message` is a global skip key (see _skip_keys.yaml).
+  Interlogix-Security:
+    switch1:
+      platform: sensor
+      device_class: null
+      unit_of_measurement: null
+      state_class: null
+      name: Switch 1
+      force_update: true
+      object_suffix: switch1
+    switch2:
+      platform: sensor
+      device_class: null
+      unit_of_measurement: null
+      state_class: null
+      name: Switch 2
+      force_update: true
+      object_suffix: switch2
+    switch3:
+      platform: sensor
+      device_class: null
+      unit_of_measurement: null
+      state_class: null
+      name: Switch 3
+      force_update: true
+      object_suffix: switch3
+    switch4:
+      platform: sensor
+      device_class: null
+      unit_of_measurement: null
+      state_class: null
+      name: Switch 4
+      force_update: true
+      object_suffix: switch4
+    switch5:
+      platform: sensor
+      device_class: null
+      unit_of_measurement: null
+      state_class: null
+      name: Switch 5
+      force_update: true
+      object_suffix: switch5
+
+  # --- Yale HSA / YES-Alarmkit -------------------------------------------------
+  # https://github.com/merbanan/rtl_433/blob/a1794a042eef0d723c298ec95139687cb61f3e06/src/devices/yale_hsa.c#L102-L115
+  #
+  # `stype`, `state` and `event` are whole bytes, emitted as decimal ints in
+  # JSON (the "%02x" format applies only to text output). Their meaning is
+  # marked "Guessed data so far" upstream (yale_hsa.c#L40-L55) and its own
+  # table contradicts a clean reading: event 01 is "contact opened" and
+  # "movement" but also "PIR low battery"; event 04 is tamper but also
+  # "W/D low battery". So no binary sensor or named event type is derived from
+  # them; the raw values ship as sensors.
+  Yale-HSA:
+    # Primary signal: 1 = trigger, 3 = binding, 4 = tamper per the upstream
+    # guess. `force_update` so a repeat trigger (same value) is still recorded.
+    event:
+      platform: sensor
+      device_class: null
+      unit_of_measurement: null
+      state_class: null
+      name: Last event
+      force_update: true
+      object_suffix: event
+    # Bit field; the upstream table suggests the low nibble carries tamper (2)
+    # and low-battery (8) flags, but that is not confirmed.
+    state:
+      platform: sensor
+      device_class: null
+      unit_of_measurement: null
+      state_class: null
+      name: State
+      entity_category: diagnostic
+      object_suffix: state
+    # Sensor-type byte: fixed per physical sensor (0xac = 172 for the door /
+    # window contact, 0x15 = 21 for the PIR in the upstream table), so it is
+    # static and disabled by default.
+    stype:
+      platform: sensor
+      device_class: null
+      unit_of_measurement: null
+      state_class: null
+      name: Sensor type
+      entity_category: diagnostic
+      enabled_by_default: false
+      object_suffix: stype

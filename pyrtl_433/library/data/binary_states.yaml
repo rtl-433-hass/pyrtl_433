@@ -96,6 +96,24 @@ alarm:
   object_suffix: alarm
   event_driven: true
 
+# Kerui door/window contact (e.g. D026). Unlike `motion` / `water` on the same
+# decoder this is a genuine two-state field: cmd 0xe emits `opened` = 1 and
+# cmd 0x7 emits `opened` = 0, each under its own DATA_COND, so the decoder
+# sends both the on and the off. Kerui is the only emitter of `opened` in
+# src/devices, so it is mapped globally. It is the device's primary entity and
+# transmits only on a change, hence `event_driven`.
+#   https://github.com/merbanan/rtl_433/blob/a1794a042eef0d723c298ec95139687cb61f3e06/src/devices/kerui.c#L80-L81
+opened:
+  platform: binary_sensor
+  device_class: opening
+  unit_of_measurement: null
+  state_class: null
+  name: null
+  payload: { on: "1", off: "0" }
+  force_update: true
+  object_suffix: opened
+  event_driven: true
+
 # Door/window state. Upstream inverts: closed == 0 means open.
 closed:
   platform: binary_sensor

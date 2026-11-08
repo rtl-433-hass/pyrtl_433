@@ -1,0 +1,29 @@
+[
+  {
+    "time": "@0.000000s",
+    "model": "Yale-HSA",
+    "id": 4660,
+    "stype": 172,
+    "state": 16,
+    "event": 1,
+    "mic": "CHECKSUM"
+  },
+  {
+    "time": "@0.000000s",
+    "model": "Yale-HSA",
+    "id": 4660,
+    "stype": 172,
+    "state": 18,
+    "event": 4,
+    "mic": "CHECKSUM"
+  },
+  {
+    "time": "@0.000000s",
+    "model": "Yale-HSA",
+    "id": 22136,
+    "stype": 21,
+    "state": 48,
+    "event": 3,
+    "mic": "CHECKSUM"
+  }
+]

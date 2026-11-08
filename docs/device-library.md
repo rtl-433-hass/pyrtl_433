@@ -222,7 +222,7 @@ Note the direction matters for some fields. The upstream `closed` field is
 
 ### Motion / occupancy
 
-PIR / occupancy decoders (Interlogix, Risco Agility, Kerui, …) emit `motion`
+PIR / occupancy decoders (Risco Agility, Kerui, …) emit `motion`
 **only on detection** (raw value `1`) and **never send an off** — the hardware is
 detect-only. So `motion` is a `binary_sensor` (device class `occupancy`) whose
 `payload` declares only an `on` token; the off state is **synthesized** by a
@@ -277,6 +277,17 @@ policy. A typical mapping is never-expire for event-driven devices and a finite
 default (10 minutes, say) for periodic ones. An empty `event_driven_keys` — a
 failed or empty library load — classifies everything as periodic rather than
 pinning every device to never-expire.
+
+!!! warning "The classification is per field key, not per model"
+
+    `event_driven_field_keys` returns bare field keys, and `is_event_driven`
+    matches on them with no model. A **model-scoped** entry that is
+    `event_driven: true` or `platform: event` therefore marks that field
+    event-driven for *every* model that emits it. For a generic name such as
+    `state`, `event` or `water`, that pins unrelated periodic devices (TPMS,
+    thermostats, temperature probes) to never-expire. Only flag a model-scoped
+    field event-driven when no other decoder emits that key; `security.yaml`
+    leaves its generic fields periodic for this reason.
 
 Diagnostic fields such as `battery_ok` do not decide the class on their own: if a
 device *also* has an event-driven field, the whole device is event-driven, so its
@@ -424,8 +435,8 @@ accordingly when choosing a default: see the security-sensor loop bits in
 `_skip_keys.yaml` lists fields that must never produce an entity — device
 identity (`model`, `id`, `channel`, `subtype`, `type`, and SCMplus's duplicate
 `EndpointID`), message bookkeeping (`mic`, `mod`, `sequence_num`,
-`message_type`, `exception`, `raw_msg`, SCMplus's `PacketCRC`), and the
-secondary radio-tuning fields (`freq1`, `freq2`, `protocol`). The primary per-event `freq` is **not** skipped — it is
+`message_type`, `exception`, `raw_msg`, Interlogix's `raw_message`, SCMplus's
+`PacketCRC`), and the secondary radio-tuning fields (`freq1`, `freq2`, `protocol`). The primary per-event `freq` is **not** skipped — it is
 mapped in `misc.yaml` to a diagnostic Frequency sensor (disabled by default)
 alongside `rssi`, `snr`, and `noise`:
 
@@ -523,6 +534,7 @@ pyrtl_433/library/data/
 ├── power_electrical.yaml   # power, energy, current, voltage, consumption
 ├── pressure.yaml           # barometric pressure
 ├── rain.yaml               # rain total / rate
+├── security.yaml           # model-scoped: Kerui, Interlogix, Yale HSA
 ├── temperature.yaml        # temperature variants
 └── wind.yaml               # wind speed / gust / direction
 ```

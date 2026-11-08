@@ -1,0 +1,54 @@
+[
+  {
+    "time": "@0.279016s",
+    "model": "Interlogix-Security",
+    "subtype": "contact",
+    "id": "a7106d",
+    "battery_ok": 1,
+    "switch1": "OPEN",
+    "switch2": "OPEN",
+    "switch3": "CLOSED",
+    "switch4": "OPEN",
+    "switch5": "OPEN",
+    "raw_message": "cd15b8"
+  },
+  {
+    "time": "@0.204204s",
+    "model": "Interlogix-Security",
+    "subtype": "contact",
+    "id": "a7106d",
+    "battery_ok": 1,
+    "switch1": "CLOSED",
+    "switch2": "OPEN",
+    "switch3": "CLOSED",
+    "switch4": "OPEN",
+    "switch5": "OPEN",
+    "raw_message": "211520"
+  },
+  {
+    "time": "@0.267984s",
+    "model": "Interlogix-Security",
+    "subtype": "motion",
+    "id": "468d19",
+    "battery_ok": 1,
+    "switch1": "CLOSED",
+    "switch2": "OPEN",
+    "switch3": "OPEN",
+    "switch4": "OPEN",
+    "switch5": "OPEN",
+    "raw_message": "01d520"
+  },
+  {
+    "time": "@0.133476s",
+    "model": "Interlogix-Security",
+    "subtype": "smoke",
+    "id": "29cd45",
+    "battery_ok": 1,
+    "switch1": "OPEN",
+    "switch2": "OPEN",
+    "switch3": "OPEN",
+    "switch4": "CLOSED",
+    "switch5": "CLOSED",
+    "raw_message": "a740a8"
+  }
+]

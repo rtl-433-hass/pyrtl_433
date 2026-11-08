@@ -1,0 +1,50 @@
+[
+  {
+    "time": "@0.296480s",
+    "model": "Kerui-Security",
+    "id": 413106,
+    "cmd": 14,
+    "opened": 1,
+    "state": "open"
+  },
+  {
+    "time": "@0.294528s",
+    "model": "Kerui-Security",
+    "id": 413106,
+    "cmd": 7,
+    "opened": 0,
+    "state": "close"
+  },
+  {
+    "time": "@0.277692s",
+    "model": "Kerui-Security",
+    "id": 413106,
+    "cmd": 11,
+    "tamper": 1,
+    "state": "tamper"
+  },
+  {
+    "time": "@0.000000s",
+    "model": "Kerui-Security",
+    "id": 413107,
+    "cmd": 10,
+    "motion": 1,
+    "state": "motion"
+  },
+  {
+    "time": "@0.000000s",
+    "model": "Kerui-Security",
+    "id": 413108,
+    "cmd": 5,
+    "water": 1,
+    "state": "water"
+  },
+  {
+    "time": "@0.000000s",
+    "model": "Kerui-Security",
+    "id": 413106,
+    "cmd": 15,
+    "battery_ok": 0,
+    "state": "battery"
+  }
+]
