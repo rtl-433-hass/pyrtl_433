@@ -319,12 +319,19 @@ async def make_client(fake_session: FakeSession, fake_clock: FakeClock):
 
     Every client is stopped on teardown so no connect/refresh task leaks past the
     test (which would surface as a warning under ``filterwarnings=["error"]``).
+
+    ``event_tz`` defaults to UTC. Without it the client reads an offset-less
+    rtl_433 ``time`` such as ``"2026-05-25 10:00:00"`` in the *host's* zone, while
+    ``fake_clock`` is pinned in UTC, so the same frame lands in the future or the
+    past depending on where the suite runs and replay classification flips. A test
+    exercising another zone passes ``event_tz`` explicitly.
     """
     created: list[Rtl433Client] = []
 
     def _make(**kwargs: Any) -> Rtl433Client:
         kwargs.setdefault("session", fake_session)
         kwargs.setdefault("clock", fake_clock)
+        kwargs.setdefault("event_tz", UTC)
         host = kwargs.pop("host", "rtl433.local")
         client = Rtl433Client(host, **kwargs)
         created.append(client)
