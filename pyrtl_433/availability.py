@@ -40,8 +40,10 @@ def is_event_driven(
     Args:
         field_keys: The device's known measurement field keys, typically from
             :func:`known_field_keys`.
-        event_driven_keys: The event-driven key set for the active device
-            library, from :func:`pyrtl_433.library.event_driven_field_keys`.
+        event_driven_keys: The event-driven key set for the device's model in
+            the active device library, from
+            :func:`pyrtl_433.library.event_driven_field_keys` called with that
+            ``model``.
 
     Returns:
         ``True`` if the device is event-driven, else ``False``.

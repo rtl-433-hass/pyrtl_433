@@ -19,7 +19,7 @@ from __future__ import annotations
 import pytest
 
 from pyrtl_433.availability import is_event_driven, known_field_keys
-from pyrtl_433.library import event_driven_field_keys, load_library
+from pyrtl_433.library import event_driven_field_keys, load_library, merge_overrides
 
 
 # --------------------------------------------------------------------------- #
@@ -127,3 +127,32 @@ def test_returns_a_fresh_mutable_set():
 def test_accepts_iterators():
     """Either side may be a one-shot iterator."""
     assert known_field_keys(iter(["a"]), iter(["b"])) == {"a", "b"}
+
+
+def test_classifies_per_model_against_a_scoped_override():
+    """A scoped event-driven key classifies only its own model's devices."""
+    registry, skip_keys = load_library()
+    merged, _ = merge_overrides(
+        registry,
+        skip_keys,
+        {
+            "models": {
+                "Kerui-Security": {
+                    "water": {
+                        "platform": "binary_sensor",
+                        "device_class": "moisture",
+                        "object_suffix": "water",
+                        "payload": {"on": "1"},
+                        "event_driven": True,
+                    }
+                }
+            }
+        },
+    )
+    fields = {"water", "battery_ok"}
+
+    kerui = event_driven_field_keys(merged, model="Kerui-Security")
+    acurite = event_driven_field_keys(merged, model="Acurite-00275rm")
+
+    assert is_event_driven(fields, kerui)
+    assert not is_event_driven(fields | {"temperature_C"}, acurite)
