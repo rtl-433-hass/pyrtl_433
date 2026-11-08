@@ -1,4 +1,8 @@
 [build]
+  # Netlify is only used for PR deploy previews; the published docs live on
+  # GitHub Pages. Skip production builds so pushes to main don't spend credits
+  # (15 per production deploy; previews are free). Exit 0 = skip the build.
+  ignore = '[ "$CONTEXT" = "production" ]'
   # Install docs/requirements.txt without installing application dependencies.
   base = "docs"
   command = "cd .. && mkdocs build --strict"
