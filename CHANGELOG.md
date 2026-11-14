@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.5.0](https://github.com/rtl-433-hass/pyrtl_433/compare/v0.4.1...v0.5.0) (2026-11-14)
+
+
+### Features
+
+* **library:** map Kerui, Interlogix and Yale security sensor fields ([#76](https://github.com/rtl-433-hass/pyrtl_433/issues/76)) ([868375f](https://github.com/rtl-433-hass/pyrtl_433/commit/868375f4453d52c08cee5343dba0585ffbe85498))
+
+
+### Bug Fixes
+
+* **library:** classify event-driven fields per model ([#77](https://github.com/rtl-433-hass/pyrtl_433/issues/77)) ([edec4d1](https://github.com/rtl-433-hass/pyrtl_433/commit/edec4d1842573abe15010f6878ab2077bdffc99c))
+
 ## [0.4.1](https://github.com/rtl-433-hass/pyrtl_433/compare/v0.4.0...v0.4.1) (2026-09-21)
 
 
