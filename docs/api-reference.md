@@ -88,10 +88,14 @@ a finite default for periodic ones).
 from pyrtl_433 import is_event_driven, known_field_keys
 from pyrtl_433.library import event_driven_field_keys
 
-event_keys = event_driven_field_keys(registry)
+event_keys = event_driven_field_keys(registry, model=device_model)
 fields = known_field_keys(adopted_field_keys, latest_payload_field_keys)
 never_expires = is_event_driven(fields, event_keys)
 ```
+
+Pass the device's `model`: a model-scoped (`models:`) entry only counts for
+its own model, so the key set is per model. Without it only the global table
+applies. A consumer classifying many devices can cache the set per model.
 
 `known_field_keys` unions the persisted (restart-surviving) field keys with the
 latest live payload's, so a device that has been silent since a restart is still

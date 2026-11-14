@@ -117,8 +117,10 @@ def should_skip(field_key: str, skip_keys: set[str] | None = None) -> bool:
     return field_key in skip_keys
 
 
-def event_driven_field_keys(registry: Registry | None = None) -> frozenset[str]:
-    """Return the rtl_433 field keys that mark a device as *event-driven*.
+def event_driven_field_keys(
+    registry: Registry | None = None, *, model: str | None = None
+) -> frozenset[str]:
+    """Return the rtl_433 field keys that mark a ``model``'s device *event-driven*.
 
     A field is event-driven when its descriptor either uses ``platform: event``
     (momentary transmissions — buttons, doorbells) or sets ``event_driven: true``
@@ -128,10 +130,17 @@ def event_driven_field_keys(registry: Registry | None = None) -> frozenset[str]:
     :func:`pyrtl_433.availability.is_event_driven` and maps the resulting boolean
     onto its own availability-timeout policy.
 
-    The set is derived from the *active* registry — both the global ``flat``
-    table and every model-scoped overlay — so it stays in sync with the shipped
-    library and any per-installation user mappings. ``registry`` defaults to the
-    cached shipped library.
+    Each key resolves exactly as :func:`lookup` does: ``model``'s scoped entry
+    for the key wins over the global one, so a ``models:`` entry can make a key
+    event-driven for that model only, or stop a globally event-driven key from
+    counting for it. With ``model=None`` (or a model with no ``models:`` block)
+    only the global table applies -- a model-scoped entry never leaks onto other
+    models that emit the same, often generic, field name (``state``,
+    ``event``, ``water``).
+
+    The set is derived from the *active* registry, so it stays in sync with the
+    shipped library and any per-installation user mappings. ``registry``
+    defaults to the cached shipped library.
     """
     if registry is None:
         registry, _ = _default_library()
@@ -140,8 +149,12 @@ def event_driven_field_keys(registry: Registry | None = None) -> frozenset[str]:
         return descriptor.platform == "event" or descriptor.event_driven
 
     keys = {key for key, desc in registry.flat.items() if _is_event_driven(desc)}
-    for scoped in registry.models.values():
-        keys.update(key for key, desc in scoped.items() if _is_event_driven(desc))
+    if model is not None:
+        for key, desc in registry.models.get(model, {}).items():
+            if _is_event_driven(desc):
+                keys.add(key)
+            else:
+                keys.discard(key)
     return frozenset(keys)
 
 

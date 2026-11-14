@@ -224,30 +224,126 @@ def test_event_driven_field_keys_derivation(library):
     assert keys.isdisjoint({"tamper", "battery_ok", "temperature_C", "humidity"})
 
 
-def test_event_driven_field_keys_includes_model_scoped(library):
-    """Model-scoped event-driven descriptors are picked up alongside the flat set."""
+def _with_model_overrides(library, models):
     registry, skip_keys = library
+    merged, _ = merge_overrides(registry, skip_keys, {"models": models})
+    return merged
 
-    merged, _ = merge_overrides(
-        registry,
-        skip_keys,
+
+def test_event_driven_field_keys_includes_model_scoped(library):
+    """A model-scoped event-driven descriptor counts for its own model."""
+    merged = _with_model_overrides(
+        library,
         {
-            "models": {
-                "Acme-9000": {
-                    "blip": {
-                        "platform": "binary_sensor",
-                        "device_class": "motion",
-                        "name": "Blip",
-                        "object_suffix": "blip",
-                        "payload": {"on": "1", "off": "0"},
-                        "event_driven": True,
-                    }
+            "Acme-9000": {
+                "blip": {
+                    "platform": "binary_sensor",
+                    "device_class": "motion",
+                    "name": "Blip",
+                    "object_suffix": "blip",
+                    "payload": {"on": "1", "off": "0"},
+                    "event_driven": True,
+                },
+                "ping": {
+                    "platform": "event",
+                    "device_class": None,
+                    "name": "Ping",
+                    "object_suffix": "ping",
+                },
+            }
+        },
+    )
+
+    keys = event_driven_field_keys(merged, model="Acme-9000")
+    assert {"blip", "ping"} <= keys
+    # The global set still applies to the scoped model.
+    assert {"motion", "contact_open", "button"} <= keys
+
+
+def test_model_scoped_event_driven_does_not_leak_to_other_models(library):
+    """A scoped entry on a generic key must not mark other emitters event-driven.
+
+    Classification used to union every model's scoped keys into one set, so a
+    Kerui-only ``water`` entry would have pinned the periodic Acurite probe and
+    Vaillant thermostat (which also emit ``water``) to never-expire.
+    """
+    merged = _with_model_overrides(
+        library,
+        {
+            "Kerui-Security": {
+                "water": {
+                    "platform": "binary_sensor",
+                    "device_class": "moisture",
+                    "name": None,
+                    "object_suffix": "water",
+                    "payload": {"on": "1"},
+                    "clear_delay": 90,
+                    "event_driven": True,
                 }
             }
         },
     )
 
-    assert "blip" in event_driven_field_keys(merged)
+    assert "water" in event_driven_field_keys(merged, model="Kerui-Security")
+    assert "water" not in event_driven_field_keys(merged, model="Acurite-00275rm")
+    # No model resolves the global table only, matching ``lookup``.
+    assert "water" not in event_driven_field_keys(merged)
+
+
+def test_model_scoped_entry_can_opt_a_global_key_out(library):
+    """A scoped non-event-driven entry overrides a globally event-driven key."""
+    merged = _with_model_overrides(
+        library,
+        {
+            "Chatty-Contact": {
+                "contact_open": {
+                    "platform": "binary_sensor",
+                    "device_class": "opening",
+                    "name": "Contact open",
+                    "object_suffix": "contact_open",
+                    "payload": {"on": "1", "off": "0"},
+                }
+            }
+        },
+    )
+
+    assert "contact_open" not in event_driven_field_keys(merged, model="Chatty-Contact")
+    assert "contact_open" in event_driven_field_keys(merged, model="Other")
+    assert "contact_open" in event_driven_field_keys(merged)
+
+
+def test_event_driven_field_keys_agrees_with_lookup(library):
+    """Per model, membership is exactly "``lookup`` resolves an event-driven entry"."""
+    merged = _with_model_overrides(
+        library,
+        {
+            "Acme-9000": {
+                "blip": {
+                    "platform": "binary_sensor",
+                    "device_class": "motion",
+                    "name": "Blip",
+                    "object_suffix": "blip",
+                    "event_driven": True,
+                },
+                "motion": {
+                    "platform": "binary_sensor",
+                    "device_class": "occupancy",
+                    "name": "Motion",
+                    "object_suffix": "motion",
+                },
+            }
+        },
+    )
+    candidates = set(merged.flat) | set(merged.models["Acme-9000"])
+
+    for model in (None, "Acme-9000", "Unknown-Model"):
+        keys = event_driven_field_keys(merged, model=model)
+        expected = set()
+        for key in candidates:
+            desc = lookup(key, model, registry=merged)
+            if desc is not None and (desc.platform == "event" or desc.event_driven):
+                expected.add(key)
+        assert keys == expected, model
 
 
 def test_invalid_event_driven_value_is_ignored():

@@ -72,7 +72,7 @@ load once and pass its merged `registry` / `skip_keys` explicitly.
 | `lookup(field_key, model=None, registry=None)` | Resolve a descriptor, model-scoped first (see [resolution order](#lookup-resolution-order)). |
 | `should_skip(field_key, skip_keys=None)` | Whether a field is on the never-an-entity list. |
 | `apply_transform(descriptor, raw_value)` | Raw rtl_433 value → the state to store. |
-| `event_driven_field_keys(registry=None)` | The field keys that mark a device as event-driven (see [availability](#availability-classification)). |
+| `event_driven_field_keys(registry=None, *, model=None)` | The field keys that mark a `model`'s device as event-driven (see [availability](#availability-classification)). |
 | `merge_overrides(registry, skip_keys, override_data)` | Layer a parsed user override on top of a base library. Pure. |
 | `validate_user_mappings(data)` | Validate a user-supplied override object → a list of problem strings (empty = valid). Pure, never raises. |
 | `normalize_overrides(data)` | Deep-copied, JSON-serialisable, payload-canonical copy of an override object, for storage. Pure. |
@@ -254,16 +254,24 @@ periodic check-in at all. A field is **event-driven** when it uses
 state change*, so any finite silence timeout eventually misfires and wrongly
 hides a healthy device.
 
-`event_driven_field_keys(registry)` returns that key set, derived from the active
-registry — the global table *and* every model-scoped overlay — so it stays in
-sync with the shipped library and any user overrides. Pair it with
+`event_driven_field_keys(registry, model=...)` returns that key set for one
+model, derived from the active registry so it stays in sync with the shipped
+library and any user overrides. Each key resolves the way
+[`lookup`](#lookup-resolution-order) does: the model's `models:` entry wins over
+the global one, so a model-scoped entry can make a key event-driven for that
+model only — or stop a globally event-driven key from counting for it. A
+model-scoped entry never affects any *other* model, which matters because many
+field names are generic: `state`, `event` and `water` each mean different things
+across decoders. Without `model`, only the global table applies.
+
+Pass the device's model. Pair the result with
 [`pyrtl_433.availability`](api-reference.md#module-map):
 
 ```python
 from pyrtl_433.availability import is_event_driven, known_field_keys
 from pyrtl_433.library import event_driven_field_keys
 
-event_keys = event_driven_field_keys(registry)
+event_keys = event_driven_field_keys(registry, model=device_model)
 
 # `adopted` is whatever field keys you persisted for the device (they survive a
 # restart); `live` is the latest payload's fields. Unioning both is what keeps a
