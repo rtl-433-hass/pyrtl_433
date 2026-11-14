@@ -26,7 +26,7 @@ from pathlib import Path
 
 import pytest
 
-from pyrtl_433.library import load_library, lookup
+from pyrtl_433.library import FieldDescriptor, load_library, lookup
 from pyrtl_433.normalizer import normalize
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
@@ -83,3 +83,43 @@ def test_fixture_fields_all_resolve_to_descriptors(fixture_name, library, load_f
         "pyrtl_433/library/data/, or add the key to _skip_keys.yaml if it is "
         "identity or transport data."
     )
+
+
+@pytest.mark.parametrize("fixture_name", FIXTURE_NAMES)
+def test_fixture_devices_have_distinct_entity_identities(
+    fixture_name, library, load_fixture
+):
+    """Each device's entities have unique suffixes and no nameless clash.
+
+    ``object_suffix`` forms the entity unique id, so two fields of one device
+    sharing a suffix collapse into one entity. Two *nameless* entities with the
+    same ``device_class`` on one device both derive the same name from that class,
+    so a consumer like Home Assistant appends ``_2`` to one entity_id. Fields are
+    accumulated per device across every event in the fixture, because a decoder
+    such as Kerui emits a different conditional field in each transmission.
+    """
+    registry, skip_keys = library
+    skip = set(skip_keys)
+
+    raw = load_fixture(fixture_name)
+    events = [raw] if isinstance(raw, dict) else list(raw)
+
+    per_device: dict[str, dict[str, FieldDescriptor]] = {}
+    for event in events:
+        normalized = normalize(event, skip)
+        fields = per_device.setdefault(normalized.device_key, {})
+        for field_key in normalized.fields:
+            descriptor = lookup(field_key, normalized.model, registry=registry)
+            if descriptor is not None:
+                fields[field_key] = descriptor
+
+    for device, fields in per_device.items():
+        suffixes = [d.object_suffix for d in fields.values()]
+        assert len(suffixes) == len(set(suffixes)), (device, sorted(suffixes))
+
+        nameless = [
+            d.device_class
+            for d in fields.values()
+            if d.name is None and d.device_class is not None
+        ]
+        assert len(nameless) == len(set(nameless)), (device, sorted(nameless))

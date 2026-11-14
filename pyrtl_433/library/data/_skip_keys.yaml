@@ -39,3 +39,10 @@ skip_keys:
   #   PacketCRC:  https://github.com/merbanan/rtl_433/blob/65e26f518077cafb595f5984201b9f7c121406ef/src/devices/scmplus.c#L149
   - EndpointID
   - PacketCRC
+  # Interlogix's `raw_message` is message bytes 3..5 as hex: the 3-bit trigger
+  # (replay) counter, the battery bit and the latch bits. The counter changes on
+  # every transmission and the rest is already exposed as `battery_ok` and
+  # `switch1`..`switch5`, so it is transport noise like `raw_msg`. Interlogix is
+  # its only emitter in src/devices (insteon.c has it commented out).
+  #   https://github.com/merbanan/rtl_433/blob/a1794a042eef0d723c298ec95139687cb61f3e06/src/devices/interlogix.c#L192-L193
+  - raw_message
