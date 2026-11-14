@@ -2,5 +2,39 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
     "github>rtl-433-hass/renovate-config:python"
+  ],
+  "customDatasources": {
+    "ha-python": {
+      "description": "Python version of the latest stable Home Assistant release (HA core's master branch tracks stable)",
+      "defaultRegistryUrlTemplate": "https://raw.githubusercontent.com/home-assistant/core/master/.python-version",
+      "format": "plain"
+    }
+  },
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Track the Python version of the latest stable Home Assistant release",
+      "managerFilePatterns": ["/^\\.github/workflows/.+\\.ya?ml$/"],
+      "matchStrings": [
+        "# renovate: ha-python\\s+python-version:\\s*\"(?<currentValue>[^\"]+)\""
+      ],
+      "depNameTemplate": "ha-python",
+      "datasourceTemplate": "custom.ha-python"
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "HA Python: track major.minor only; plain datasource has no timestamps so skip release age; review before merging",
+      "matchDatasources": ["custom.ha-python"],
+      "extractVersion": "^(?<version>\\d+\\.\\d+)",
+      "minimumReleaseAge": null,
+      "automerge": false
+    },
+    {
+      "description": "Python version is tracked via ha-python; ignore setup-python's built-in extraction",
+      "matchManagers": ["github-actions"],
+      "matchDepNames": ["python"],
+      "enabled": false
+    }
   ]
 }
