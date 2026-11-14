@@ -1042,8 +1042,8 @@ load once and pass its merged <code>registry</code> / <code>skip_keys</code> exp
 <td>Raw rtl_433 value → the state to store.</td>
 </tr>
 <tr>
-<td><code>event_driven_field_keys(registry=None)</code></td>
-<td>The field keys that mark a device as event-driven (see <a href="#availability-classification">availability</a>).</td>
+<td><code>event_driven_field_keys(registry=None, *, model=None)</code></td>
+<td>The field keys that mark a <code>model</code>'s device as event-driven (see <a href="#availability-classification">availability</a>).</td>
 </tr>
 <tr>
 <td><code>merge_overrides(registry, skip_keys, override_data)</code></td>
@@ -1266,14 +1266,21 @@ periodic check-in at all. A field is <strong>event-driven</strong> when it uses
 <code>contact_open</code>, <code>reed_open</code>, <code>closed</code>, <code>alarm</code>): the device transmits <em>only on a
 state change</em>, so any finite silence timeout eventually misfires and wrongly
 hides a healthy device.</p>
-<p><code>event_driven_field_keys(registry)</code> returns that key set, derived from the active
-registry — the global table <em>and</em> every model-scoped overlay — so it stays in
-sync with the shipped library and any user overrides. Pair it with
+<p><code>event_driven_field_keys(registry, model=...)</code> returns that key set for one
+model, derived from the active registry so it stays in sync with the shipped
+library and any user overrides. Each key resolves the way
+<a href="#lookup-resolution-order"><code>lookup</code></a> does: the model's <code>models:</code> entry wins over
+the global one, so a model-scoped entry can make a key event-driven for that
+model only — or stop a globally event-driven key from counting for it. A
+model-scoped entry never affects any <em>other</em> model, which matters because many
+field names are generic: <code>state</code>, <code>event</code> and <code>water</code> each mean different things
+across decoders. Without <code>model</code>, only the global table applies.</p>
+<p>Pass the device's model. Pair the result with
 <a href="../api-reference/#module-map"><code>pyrtl_433.availability</code></a>:</p>
 <div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">pyrtl_433.availability</span><span class="w"> </span><span class="kn">import</span> <span class="n">is_event_driven</span><span class="p">,</span> <span class="n">known_field_keys</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">pyrtl_433.library</span><span class="w"> </span><span class="kn">import</span> <span class="n">event_driven_field_keys</span>
 
-<span class="n">event_keys</span> <span class="o">=</span> <span class="n">event_driven_field_keys</span><span class="p">(</span><span class="n">registry</span><span class="p">)</span>
+<span class="n">event_keys</span> <span class="o">=</span> <span class="n">event_driven_field_keys</span><span class="p">(</span><span class="n">registry</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="n">device_model</span><span class="p">)</span>
 
 <span class="c1"># `adopted` is whatever field keys you persisted for the device (they survive a</span>
 <span class="c1"># restart); `live` is the latest payload&#39;s fields. Unioning both is what keeps a</span>

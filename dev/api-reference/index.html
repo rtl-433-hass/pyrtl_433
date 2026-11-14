@@ -744,10 +744,13 @@ a finite default for periodic ones).</p>
 <div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">pyrtl_433</span><span class="w"> </span><span class="kn">import</span> <span class="n">is_event_driven</span><span class="p">,</span> <span class="n">known_field_keys</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">pyrtl_433.library</span><span class="w"> </span><span class="kn">import</span> <span class="n">event_driven_field_keys</span>
 
-<span class="n">event_keys</span> <span class="o">=</span> <span class="n">event_driven_field_keys</span><span class="p">(</span><span class="n">registry</span><span class="p">)</span>
+<span class="n">event_keys</span> <span class="o">=</span> <span class="n">event_driven_field_keys</span><span class="p">(</span><span class="n">registry</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="n">device_model</span><span class="p">)</span>
 <span class="n">fields</span> <span class="o">=</span> <span class="n">known_field_keys</span><span class="p">(</span><span class="n">adopted_field_keys</span><span class="p">,</span> <span class="n">latest_payload_field_keys</span><span class="p">)</span>
 <span class="n">never_expires</span> <span class="o">=</span> <span class="n">is_event_driven</span><span class="p">(</span><span class="n">fields</span><span class="p">,</span> <span class="n">event_keys</span><span class="p">)</span>
 </code></pre></div>
+<p>Pass the device's <code>model</code>: a model-scoped (<code>models:</code>) entry only counts for
+its own model, so the key set is per model. Without it only the global table
+applies. A consumer classifying many devices can cache the set per model.</p>
 <p><code>known_field_keys</code> unions the persisted (restart-surviving) field keys with the
 latest live payload's, so a device that has been silent since a restart is still
 classified from what it reported before. An empty <code>event_keys</code> yields <code>False</code>, so
